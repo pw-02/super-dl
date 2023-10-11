@@ -1,0 +1,7 @@
+torch
+torchvision
+
+#nlp workload
+#tiktoken
+#datasets
+wandb
