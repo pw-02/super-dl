@@ -1,4 +1,4 @@
-name: base
+name: super-dl
 channels:
   - anaconda
   - defaults
