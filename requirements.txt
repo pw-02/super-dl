@@ -2,9 +2,10 @@ torch
 torchvision
 lightning
 configargparse
+jsonargparse
 #nlp workload
 #tiktoken
 #datasets
 #
-wandb
-transformers
+#wandb
+#transformers
