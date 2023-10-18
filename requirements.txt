@@ -1,7 +1,10 @@
 torch
 torchvision
-
+lightning
+configargparse
 #nlp workload
 #tiktoken
 #datasets
+#
 wandb
+transformers

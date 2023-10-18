@@ -1,3 +1,4 @@
-mlworkloads/nanoGPT/data/openwebtext/train.bin
-mlworkloads/nanoGPT/data/openwebtext/val.bin
-mlworkloads/nanoGPT/logs/
+mlworkloads/nlp/out/
+mlworkloads/nlp/logs/
+mlworkloads/nlp/data/openwebtext/train.bin
+mlworkloads/nlp/data/openwebtext/val.bin

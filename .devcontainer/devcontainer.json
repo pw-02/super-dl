@@ -1,5 +1,5 @@
 {
-    "name": "Dockerfile",
+    "name": "Super",
     "context": "..",
     "dockerFile": "./Dockerfile",
     "postCreateCommand": "chmod +x ./.devcontainer/setup.sh && sh ./.devcontainer/setup.sh",
