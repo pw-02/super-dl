@@ -277,10 +277,10 @@ class SpeedMonitorBase:
                 "time/val_elapsed": self.total_eval_wct / self.divider,
                 #"time/total_elapsed": (train_elapsed + self.total_eval_wct) / self.divider,
                 "time/dataloading": dataloading_time / self.divider,
-                "time/forwrd_bkwrd_pass": forwrd_bkwrd_step / self.divider,
-                "time/step_time": step_time / self.divider,
+                "time/compute": forwrd_bkwrd_step / self.divider,
+                "time/batch_time": step_time / self.divider,
                 "samples": samples,
-                #"train_loss": loss,
+                "train_loss": loss,
             }
         )
 

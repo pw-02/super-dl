@@ -20,7 +20,7 @@ from gpt.config import Config
 from gpt.model import GPT, Block
 from gpt.speed_monitor import SpeedMonitorBase, estimate_flops, measure_flops
 from gpt.speed_monitor import SpeedMonitorFabric as SpeedMonitor
-from gpt.utils import chunked_cross_entropy, get_default_supported_precision, num_parameters
+from gpt.utils import chunked_cross_entropy, get_default_supported_precision, num_parameters, AverageMeter
 
 model_name = "pythia-70m"
 name = "openwebtext"
@@ -48,11 +48,16 @@ decay_lr = True
 warmup_iters = 2000
 lr_decay_iters = max_iters
 min_lr = 6e-5
-
+data_profile = True
 hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
 logger = CSVLogger(log_dir, name, flush_logs_every_n_steps=log_interval)
 always_save_checkpoint = False
 
+def to_python_float(t):
+    if hasattr(t, 'item'):
+        return t.item()
+    else:
+        return t[0]
 
 def setup(devices: int = 1, precision: Optional[str] = None, resume: Union[bool, Path] = False) -> None:
     precision = precision or get_default_supported_precision(training=True)
@@ -68,7 +73,7 @@ def setup(devices: int = 1, precision: Optional[str] = None, resume: Union[bool,
     else:
         strategy = "auto"
 
-    fabric = L.Fabric(devices=devices, strategy=strategy, precision=precision, loggers=logger)
+    fabric = L.Fabric(accelerator="gpu",devices=devices, strategy=strategy, precision=precision, loggers=logger)
     fabric.print(hparams)
     fabric.launch(main, resume=resume)
 
@@ -130,7 +135,7 @@ def train(
     model = state["model"]
     optimizer = state["optimizer"]
 
-    validate(fabric, model, val_dataloader)  # sanity check
+    #validate(fabric, model, val_dataloader)  # sanity check
 
     with torch.device("meta"):
         meta_model = GPT(model.config)
@@ -143,60 +148,78 @@ def train(
         measured_flops = measure_flops(meta_model, x)
         fabric.print(f"Measured TFLOPs: {measured_flops * fabric.world_size / 1e12:.2f}")
         del meta_model, x
+   
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    comp_time = AverageMeter()
+    losses = AverageMeter()
 
     total_lengths = 0
     total_t0 = time.perf_counter()
  
     train_iter = iter(train_dataloader)
 
+    end = time.perf_counter()
+    dataset_time = compute_time = 0
+
     for state["iter_num"] in range(state["iter_num"], max_iters):
-        
-        t_step = time.perf_counter()
 
         # determine and set the learning rate for this iteration
         lr = get_lr(state["iter_num"]) if decay_lr else learning_rate
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-
-        iter_t0 = time.perf_counter()
         input_ids, targets = next(train_iter)
-        t_dl = time.perf_counter() - iter_t0
         
-        t_fbs = time.perf_counter()
+        # measure data loading time
+        data_time.update(time.perf_counter() - end)
+        dataset_time += (time.perf_counter() - end)
+        #-----------------Stop data, start compute------#
+        if data_profile:
+            torch.cuda.synchronize()
+        compute_start = time.perf_counter()
+        #-----------------------------------------------# 
+        # compute output
         is_accumulating = (state["iter_num"] + 1) % gradient_accumulation_steps != 0
         with fabric.no_backward_sync(model, enabled=is_accumulating):
             logits = model(input_ids)
             loss = chunked_cross_entropy(logits, targets, chunk_size=0)
             fabric.backward(loss / gradient_accumulation_steps)
         
+        losses.update(to_python_float(loss.data), input_ids.size(0))
+
         if not is_accumulating:
+            # compute gradient and do SGD step
            fabric.clip_gradients(model, optimizer, max_norm=grad_clip)
            optimizer.step()
            optimizer.zero_grad()
            state["step_count"] += 1
-        t_forwrd_bkwrd_step = time.perf_counter() - t_fbs
 
-        step_time = time.perf_counter() - t_step
-        t1 = time.perf_counter()
+        torch.cuda.synchronize()
+        #-----------------Stop compute------#
+        comp_time.update(time.perf_counter() - compute_start)
+        compute_time += (comp_time.val)
+
+        batch_time.update(time.perf_counter() - end)
+
         total_lengths += input_ids.size(1)
         speed_monitor.on_train_batch_end(
             (state["iter_num"] + 1) * micro_batch_size,
-            t1 - total_t0,
+            time.perf_counter() - total_t0,
             # this assumes that device FLOPs are the same and that all devices have the same batch size
             fabric.world_size,
             flops_per_batch=measured_flops,
             lengths=total_lengths,
-            loss = loss.item(),
-            dataloading_time=t_dl,
-            forwrd_bkwrd_step= t_forwrd_bkwrd_step,
-            step_time = step_time
+            loss = losses.val,
+            dataloading_time=data_time.val,
+            forwrd_bkwrd_step= comp_time.val,
+            step_time = batch_time.val
         )
         
         if state["iter_num"] % log_interval == 0:
             fabric.print(
                 f"iter {state['iter_num']} step {state['step_count']}: loss {loss.item():.4f}, iter time:"
-                f" {(t1 - iter_t0) * 1000:.2f}ms{' (optimizer.step)' if not is_accumulating else ''}"
+                f" {(batch_time.val) * 1000:.2f}ms{' (optimizer.step)' if not is_accumulating else ''}"
             )
 
         if not is_accumulating and state["step_count"] % eval_interval == 0:
@@ -210,6 +233,8 @@ def train(
             checkpoint_path = out_dir / f"iter-{state['iter_num']:06d}-ckpt.pth"
             fabric.print(f"Saving checkpoint to {str(checkpoint_path)!r}")
             fabric.save(checkpoint_path, state)
+        
+        end = time.perf_counter()
 
 
 @torch.inference_mode()

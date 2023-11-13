@@ -23,16 +23,13 @@
     "customizations": {
       "vscode": {
         "extensions": [
-          // python language support
-          "ms-python.python",
-          "ms-python.vscode-pylance",
-          // sort python imports
-          "ms-python.isort",
-          // displays system usage in the bottom tray
-          "mutantdino.resourcemonitor",
-          // yaml language support
-          "redhat.vscode-yaml"
-        ]
+			"ms-python.python",
+			"ms-python.vscode-pylance",
+			"ms-python.isort",
+			"mutantdino.resourcemonitor",
+			"redhat.vscode-yaml",
+			"GrapeCity.gc-excelviewer"
+		]
       }
     }
   }

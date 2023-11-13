@@ -2,3 +2,4 @@ mlworkloads/nlp/out/
 mlworkloads/nlp/logs/
 mlworkloads/nlp/data/openwebtext/train.bin
 mlworkloads/nlp/data/openwebtext/val.bin
+data/original/
