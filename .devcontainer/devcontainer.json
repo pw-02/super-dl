@@ -28,7 +28,8 @@
 			"ms-python.isort",
 			"mutantdino.resourcemonitor",
 			"redhat.vscode-yaml",
-			"GrapeCity.gc-excelviewer"
+			"GrapeCity.gc-excelviewer",
+			"kangping.protobuf"
 		]
       }
     }

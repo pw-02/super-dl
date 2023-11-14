@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package yourpackage;
+
+service CacheManagement {
+    rpc ReportTrainingMetrics(TrainingMetrics) returns (Response);
+}
+
+message TrainingMetrics {
+    repeated int32 order_of_batches = 1;
+    float training_speed = 2;
+    int32 batch_id = 3;
+}
+
+message Response {
+    string message = 1;
+}

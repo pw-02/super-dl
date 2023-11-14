@@ -1,0 +1,13 @@
+torch
+torchvision
+lightning
+configargparse
+jsonargparse
+grpcio
+grpcio-tools
+#nlp workload
+#tiktoken
+#datasets
+#
+#wandb
+#transformers

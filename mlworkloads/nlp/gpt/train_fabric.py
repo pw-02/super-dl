@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader, IterableDataset
 # support running without installing as a package
 wd = Path(__file__).parent.parent.resolve()
 sys.path.append(str(wd))
-
 from gpt.config import Config
 from gpt.model import GPT, Block
 from gpt.speed_monitor import SpeedMonitorBase, estimate_flops, measure_flops
@@ -58,6 +57,9 @@ def to_python_float(t):
         return t.item()
     else:
         return t[0]
+    
+
+
 
 def setup(devices: int = 1, precision: Optional[str] = None, resume: Union[bool, Path] = False) -> None:
     precision = precision or get_default_supported_precision(training=True)
@@ -109,7 +111,7 @@ def main(fabric: L.Fabric, resume: Union[bool, Path]) -> None:
     train_dataloader = DataLoader(train_data, batch_size=micro_batch_size, num_workers=0)
     val_dataloader = DataLoader(val_data, batch_size=micro_batch_size, num_workers=0)
     train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, val_dataloader)
-
+    
     state = {"model": model, "optimizer": optimizer, "hparams": hparams, "iter_num": 0, "step_count": 0}
 
     if resume is True:

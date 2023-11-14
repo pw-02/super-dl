@@ -3,6 +3,8 @@ torchvision
 lightning
 configargparse
 jsonargparse
+redis
+
 #nlp workload
 #tiktoken
 #datasets
