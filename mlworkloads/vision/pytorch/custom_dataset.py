@@ -8,6 +8,7 @@ from typing import (Any,Callable,Optional,Dict,List,Tuple,TypeVar,Union,Iterable
 import logging
 import sys
 from pathlib import Path
+import functools
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -35,7 +36,7 @@ class S3Url(object):
 
 
 class SUPERVisionDataset(Dataset):
-    def __init__(self, source_system, cache_host, data_dir, lambda_function_name=None, prefix='train'):
+    def __init__(self, source_system, cache_host, data_dir,transform:Optional[Callable] =None, lambda_function_name=None, prefix='train'):
         self.cache_host = cache_host
         self.prefix = prefix
         self.lambda_function_name = lambda_function_name
@@ -44,28 +45,112 @@ class SUPERVisionDataset(Dataset):
         # Initialize Redis client and S3 client
         self.cache_host = redis.StrictRedis(host=cache_host, port=6379, db=0)
         self.s3_client = boto3.client('s3')
-
+        self.source_system = source_system
+        self.transform = transform
         if source_system == 's3':
             self._blob_classes = self._classify_blobs_s3(S3Url(data_dir))
         else:
             self._blob_classes = self._classify_blobs_local(data_dir)
     
+    def __len__(self):
+        #return sum(len(class_items) for class_items in self._blob_classes.values())
+        return self.total_samples
+    def __getitem__(self, idx):
+        batch_id = idx[1]
+        batch_indices = idx[0]
+
+        # Try fetching from Redis
+        #cached_data = self.cache_host.get(f"batch:{batch_id}")
+        cached_data = None
+        if cached_data:
+            #print(f"Cache hit for Batch ID={batch_id}")
+            return torch.tensor(cached_data, dtype=torch.float32)
+                
+        # Cache miss, choose between fetching from S3 or invoking Lambda function
+        if self.source_system == 's3':
+            images,labels = self.load_from_aws(batch_id)
+        else:
+            #print(f"Cache miss for Batch ID={batch_id}. Loading from local disk...")
+            images,labels = self.load_from_disk(batch_indices, batch_id)
+
+        # Convert the list of images and labels to tensors
+        return torch.stack(images),  torch.tensor(labels)
+    
+
+    def invoke_lambda_function(self, batch_id):
+        lambda_client = boto3.client('lambda')
+
+        # Prepare payload for Lambda function
+        payload = {'batch_id': batch_id}
+
+        # Invoke Lambda function
+        response = lambda_client.invoke(
+            FunctionName=self.lambda_function_name,
+            InvocationType='Event',  # Asynchronous invocation
+            Payload=json.dumps(payload),
+        )
+
+        #print(f"Lambda function invoked for Batch ID={batch_id}, Response={response}")
+
+    def load_from_aws(self, batch_id):
+        
+        if self.lambda_function_name:
+            #print(f"Cache miss for Batch ID={batch_id}. Invoking Lambda function...")
+            self.invoke_lambda_function(batch_id)
+        else:
+            #print(f"Cache miss for Batch ID={batch_id}. Loading from S3...")
+            self.load_from_s3(batch_id)
+            s3_key = f"{self.s3_prefix}/{self.dataset_split}/{batch_id}.pt"
+            s3_object = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
+            s3_data = s3_object['Body'].read()
+            # Store in Redis for future access
+            #self.cache_host.set(f"batch:{batch_id}", s3_data)
+    
+    def load_from_disk(self, batch_indices,batch_id):
+        from PIL import Image
+        images = []
+        labels = []
+        for idx in batch_indices:
+            path, label = self._classed_items[idx]
+            img = Image.open(path)
+            
+            if img.mode == "L":
+               img = img.convert("RGB")
+            
+            if self.transform is not None:
+                img = self.transform(img)
+
+            images.append(img)
+            labels.append(label)
+
+        return images, labels
+
+
     def is_image_file(self, filename:str):
         return any(filename.endswith(extension) for extension in self.IMG_EXTENSIONS)
+    
+    @functools.cached_property
+    def _classed_items(self) -> List[Tuple[str, int]]:
+        return [
+            (blob, class_index)
+            for class_index, blob_class in enumerate(self._blob_classes)
+            for blob in self._blob_classes[blob_class]
+        ]
+
 
     def _classify_blobs_local(self,data_dir) -> Dict[str, List[str]]:
         import os
 
-        logger.info("Reading index files (all the file paths in the data_source)")
+        data_dir = str(Path(data_dir) / self.prefix)
+
         blob_classes: Dict[str, List[str]] = {}
-        
-        index_file = Path(data_dir + 'index.json')
+        index_file = Path(data_dir) / 'index.json'
         
         if(index_file.exists()):
             f = open(index_file.absolute())
             blob_classes = json.load(f)
         else:
-            logger.info("No index file found for {}, creating it..".format(data_dir))
+            #logger.info("No index file found for {}, creating it..".format(data_dir))
             for dirpath, dirnames, filenames in os.walk(data_dir):
                 for filename in filenames:
                     if not self.is_image_file(filename):
@@ -76,7 +161,7 @@ class SUPERVisionDataset(Dataset):
                     blob_classes[blob_class] = blobs_with_class
 
             json_object = json.dumps(blob_classes, indent=4)
-            with open(data_dir + 'index.json', "w") as outfile:
+            with open(index_file, "w") as outfile:
                 outfile.write(json_object)
         self.total_samples = sum(len(class_items) for class_items in blob_classes.values())
         logger.info("Finished loading {} index. Total files:{}, Total classes:{}".format(self.prefix, self.total_samples,len(blob_classes)))
@@ -92,7 +177,7 @@ class SUPERVisionDataset(Dataset):
         #check if 'prefix' folder exists
         resp = s3_client.list_objects(Bucket=s3url.bucket, Prefix=s3url.key, Delimiter='/',MaxKeys=1)
         if not 'NextMarker' in resp:
-            logger.info("{} dir not found. Skipping {} task".format(s3url.url, self.prefix))
+            #logger.info("{} dir not found. Skipping {} task".format(s3url.url, self.prefix))
             return None
         blob_classes: Dict[str, List[str]] = {}
         #check if index file in the root of the folder to avoid having to loop through the entire bucket
@@ -129,77 +214,5 @@ class SUPERVisionDataset(Dataset):
         return blob_classes
     
 
-    def __len__(self):
-        #return sum(len(class_items) for class_items in self._blob_classes.values())
-        return self.total_samples
 
-    def __getitem__(self, idx):
-        batch_id = self.batch_order[idx]
-
-        # Try fetching from Redis
-        cached_data = self.cache_host.get(f"batch:{batch_id}")
-        if cached_data:
-            print(f"Cache hit for Batch ID={batch_id}")
-            return torch.tensor(cached_data, dtype=torch.float32)
-
-        # Cache miss, choose between fetching from S3 or invoking Lambda function
-        if self.lambda_function_name:
-            print(f"Cache miss for Batch ID={batch_id}. Invoking Lambda function...")
-            self.invoke_lambda_function(batch_id)
-        else:
-            print(f"Cache miss for Batch ID={batch_id}. Loading from S3...")
-            self.load_from_s3(batch_id)
-
-        # Retry fetching from Redis
-        cached_data = self.cache_host.get(f"batch:{batch_id}")
-        if cached_data:
-            print(f"Cache hit for Batch ID={batch_id} after cache miss action")
-            return torch.tensor(cached_data, dtype=torch.float32)
-        else:
-            print(f"Cache miss action did not populate the cache for Batch ID={batch_id}")
-            return None  # Handle the case when cache miss action fails to populate the cache
-
-    def invoke_lambda_function(self, batch_id):
-        lambda_client = boto3.client('lambda')
-
-        # Prepare payload for Lambda function
-        payload = {'batch_id': batch_id}
-
-        # Invoke Lambda function
-        response = lambda_client.invoke(
-            FunctionName=self.lambda_function_name,
-            InvocationType='Event',  # Asynchronous invocation
-            Payload=json.dumps(payload),
-        )
-
-        print(f"Lambda function invoked for Batch ID={batch_id}, Response={response}")
-
-    def load_from_s3(self, batch_id):
-        s3_key = f"{self.s3_prefix}/{self.dataset_split}/{batch_id}.pt"
-        s3_object = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
-        s3_data = s3_object['Body'].read()
-        # Store in Redis for future access
-        self.cache_host.set(f"batch:{batch_id}", s3_data)
-
-# Example usage:
-batch_order = [1, 2, 3, 4, 5]  # Replace with your batch order
-redis_host = 'your_redis_host'
-s3_bucket = 'your_s3_bucket'
-s3_prefix = 'your_s3_prefix'
-lambda_function_name = 'your_lambda_function_name'  # Set to None to fetch from S3
-
-train_dataset = SUPERVisionDataset(batch_order, redis_host, s3_bucket, s3_prefix, lambda_function_name, dataset_split='train')
-val_dataset = SUPERVisionDataset(batch_order, redis_host, s3_bucket, s3_prefix, lambda_function_name, dataset_split='val')
-
-train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True)
-val_dataloader = DataLoader(val_dataset, batch_size=2, shuffle=False)
-
-for batch in train_dataloader:
-    # Your training logic goes here
-    if batch is not None:
-        print("Training on batch:", batch)
-
-for batch in val_dataloader:
-    # Your validation logic goes here
-    if batch is not None:
-        print("Validation on batch:", batch)
+    

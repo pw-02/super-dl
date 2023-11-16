@@ -1,25 +1,23 @@
-import math
 import sys
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Union
 import lightning as L
-import numpy as np
 import torch
 from lightning.pytorch.loggers import CSVLogger
 from lightning.fabric.strategies import FSDPStrategy
 from torch.utils.data import DataLoader, IterableDataset
 from misc.args import parse_args
-from misc.speed_monitor import SpeedMonitorBase, estimate_flops, measure_flops
-from misc.speed_monitor import SpeedMonitorFabric as SpeedMonitor
-from misc.utils import get_default_supported_precision, num_parameters
+from misc.utils import get_default_supported_precision, num_parameters, AverageMeter, ProgressMeter
 from torchmetrics.classification import Accuracy
-from torch.custom_dataset import SUPERVisionDataset
-from torch.custom_batch_sampler import SimpleBatchSampler
+from pytorch.custom_dataset import SUPERVisionDataset
+from pytorch.custom_batch_sampler import SimpleBatchSampler
+import torch.nn.functional as F
+
+
 # support running without installing as a package
 wd = Path(__file__).parent.parent.resolve()
 sys.path.append(str(wd))
-
 
 def to_python_float(t):
     if hasattr(t, 'item'):
@@ -27,15 +25,11 @@ def to_python_float(t):
     else:
         return t[0]
     
-
 def setup(devices: int = 1, precision: Optional[str] = None, resume: Union[bool, Path] = False) -> None:
-    
+
     hparams = parse_args(default_config_file='mlworkloads/cfgs/resnet18.yaml')
-
-    logger = CSVLogger(hparams.log_dir, hparams.dataset_name, flush_logs_every_n_steps=hparams.log_interval)
-    
     precision = precision or get_default_supported_precision(training=True)
-
+    
     if devices > 1:
         strategy = FSDPStrategy(
             state_dict_type="full",
@@ -47,18 +41,19 @@ def setup(devices: int = 1, precision: Optional[str] = None, resume: Union[bool,
 
     # Create the Lightning Fabric object. The parameters like accelerator, strategy, devices etc. will be proided
     # by the command line. See all options: `lightning run model --help`
+    
+    logger = CSVLogger(hparams.log_dir, hparams.dataset_name, flush_logs_every_n_steps=hparams.log_interval)
+    fabric = L.Fabric(accelerator="gpu",devices=devices, strategy=strategy, precision=precision, loggers=[logger])
+    fabric.print(hparams)
+    fabric.launch(main, resume=resume, hparams=hparams)
 
-    fabric = L.Fabric(accelerator="gpu",devices=devices, strategy=strategy, precision=precision, loggers=logger)
-    fabric.print(vars(hparams))
-    fabric.launch(main, resume=resume, hparams=hparams, logger=logger)
+def main(fabric: L.Fabric, resume: Union[bool, Path],hparams) -> None:
 
-def main(fabric: L.Fabric, resume: Union[bool, Path],hparams, logger: CSVLogger  ) -> None:
-    from torchvision import models
 
-    logger.log_hyperparams(vars(hparams))
+    from torchvision import models, transforms
 
-    speed_monitor = SpeedMonitor(fabric, window_size=50, time_unit="seconds")
-
+    fabric.loggers[0].log_hyperparams(vars(hparams))
+    
     if fabric.global_rank == 0 and hparams.always_save_checkpoint:
         hparams.save_dir.mkdir(parents=True, exist_ok=True)
     
@@ -66,254 +61,279 @@ def main(fabric: L.Fabric, resume: Union[bool, Path],hparams, logger: CSVLogger 
 
     fabric.print(f"Loading {hparams.arch} model")
     t0 = time.perf_counter()
+    
     with fabric.init_module(empty_init=True):
-        model = models.get_model(hparams.arch) #model is instantiated with randomly initialized weights by default.
+        model:torch.nn.Module = models.get_model(hparams.arch) #model is instantiated with randomly initialized weights by default.
     fabric.print(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
     fabric.print(f"Total parameters in {hparams.arch}: {num_parameters(model):,}")
     optimizer = torch.optim.SGD(model.parameters(), lr=hparams.lr, momentum=hparams.momentum, weight_decay=hparams.weight_decay)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: 0.1 ** (epoch // 30))
 
     # call `setup` to prepare for model / optimizer for distributed training.
     # the model is moved automatically to the right device.
-    model, optimizer = fabric.setup(model,optimizer)
-    
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: 0.1 ** (epoch // 30))
+    model, optimizer = fabric.setup(model,optimizer)  
 
-    # use torchmetrics instead of manually computing the accuracy
-    test_acc = Accuracy(task="multiclass", num_classes=10).to(fabric.device)
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
+    transformations = transforms.Compose(
+        [#transforms.Resize(256), 
+         #transforms.CenterCrop(224), 
+         transforms.ToTensor(), normalize]
+    )
+ 
     train_data = SUPERVisionDataset(source_system=hparams.source_system,cache_host=hparams.cache_host,
-                                    data_dir=hparams.data_dir,prefix='train')
-    
+                                    data_dir=hparams.data_dir,prefix='val', transform=transformations)
     val_data = SUPERVisionDataset(source_system=hparams.source_system,cache_host=hparams.cache_host,
-                                    data_dir=hparams.data_dir,prefix='train')
+                                    data_dir=hparams.data_dir,prefix='val',transform=transformations)
     
     train_sampler = SimpleBatchSampler(dataset_size=len(train_data),batch_size=hparams.batch_size)
-    
     val_sampler = SimpleBatchSampler(dataset_size=len(val_data),batch_size=hparams.batch_size)
     
-    train_dataloader = DataLoader(train_data, sampler=train_sampler)
-    val_dataloader = DataLoader(val_data,sampler=val_sampler)
-    
+    train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=None)
+    val_dataloader = DataLoader(val_data,sampler=val_sampler, batch_size=None)
+
     train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, val_dataloader)
-
-    # Iterate through batches in the DataLoader
-    for batch in train_dataloader:
-         # Your PyTorch training loop logic here
-        pass
-
-'''
-
-def main(fabric: L.Fabric, resume: Union[bool, Path]) -> None:
-    
-    logger.log_hyperparams(hparams)
-
-    speed_monitor = SpeedMonitor(fabric, window_size=50, time_unit="seconds")
-
-    if fabric.global_rank == 0 and always_save_checkpoint:
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-    fabric.seed_everything(1337, workers=True)  # same seed for every process to init model (FSDP)
-
-    config = Config.from_name(model_name)
-    fabric.print(f"Loading model with {config.__dict__}")
-    t0 = time.perf_counter()
-    with fabric.init_module(empty_init=True):
-        model = GPT(config)
-        model.apply(model._init_weights)
-
-    fabric.print(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
-    fabric.print(f"Total parameters {num_parameters(model):,}")
-
-    model = fabric.setup(model)
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2), foreach=False
-    )
-    optimizer = fabric.setup_optimizers(optimizer)
-
-    train_data, val_data = load_datasets(data_dir, max_seq_length=model.max_seq_length)
-    train_dataloader = DataLoader(train_data, batch_size=micro_batch_size, num_workers=0)
-    val_dataloader = DataLoader(val_data, batch_size=micro_batch_size, num_workers=0)
-    train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, val_dataloader)
-
     state = {"model": model, "optimizer": optimizer, "hparams": hparams, "iter_num": 0, "step_count": 0}
 
-    if resume is True:
-        resume = sorted(out_dir.glob("*.pth"))[-1]
-    if resume:
-        fabric.print(f"Resuming training from {resume}")
-        fabric.load(resume, state)
-
+    '''
     train_time = time.perf_counter()
-    train(fabric, state, train_dataloader, val_dataloader, speed_monitor)
     fabric.print(f"Training time: {(time.perf_counter()-train_time):.2f}s")
     if fabric.device.type == "cuda":
         fabric.print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
+    '''
+    # use torchmetrics instead of manually computing the accuracy
+    #test_acc:Accuracy = Accuracy(task="multiclass", num_classes=10).to(fabric.device)
+
+    job_dataloading_time = AverageMeter("Data", ":6.3f")
+    job_compute_time = AverageMeter("Compute", ":6.3f")
+    job_num_samples = AverageMeter("Samples", ":6.3f")
+    job_num_batches = AverageMeter("batches", ":6.3f")
+    job_epoch_times = AverageMeter("Epochs", ":6.3f")
+    best_prec1 = 0
+    best_prec5 = 0
+    best_loss = 0
+
+    for epoch in range(1, hparams.max_epochs +1):
+
+        epoch_train_metrics = train(fabric, state, train_dataloader, epoch)
+
+        scheduler.step()
+
+        if hparams.no_eval:
+            prec1, prec5, loss = 0,0,0
+        else:
+            prec1, prec5, loss =  validate(fabric=fabric, model=model,val_dataloader=val_dataloader, hparams=hparams)
+            best_prec1 = max( best_prec1,prec1)
+            best_prec5 = max( best_prec5,prec5)
+            best_loss = min (best_loss, loss)
+
+        epoch_train_metrics['epoch/acc@1'] = prec1
+        epoch_train_metrics['epoch/acc@5'] = prec5
+        epoch_train_metrics['epoch/loss'] = loss
+
+        job_dataloading_time.update(epoch_train_metrics["epoch/dataloading_time"])
+        job_compute_time.update(epoch_train_metrics["epoch/compute_time"])
+        job_num_samples.update(epoch_train_metrics["epoch/total_samples"])
+        job_num_batches.update(job_num_batches.val + epoch_train_metrics["epoch/total_batches"])
+        job_epoch_times.update(epoch_train_metrics["epoch/epoch_time"])
+        
+        if epoch != hparams.max_epochs:
+             fabric.loggers[0].log_metrics(epoch_train_metrics, state["step_count"])
+
+        # When using distributed training, use `fabric.save` to ensure the current process is allowed to save a checkpoint     
+        if hparams.always_save_checkpoint:
+             fabric.save(model.state_dict(), "renet_cnn.pt")
+    
+    job_metrics = {
+                 "job/total_samples": job_num_samples.sum,
+                 "job/total_batches": job_num_batches.sum,
+                 "job/total_epochs": job_epoch_times.count,
+                 "job/job_time": job_epoch_times.sum,
+                 "job/dataloading_time": job_dataloading_time.sum,
+                 "job/compute_time": job_compute_time.sum,
+                 "job/throughput/samples_per_sec": job_num_samples.sum / job_epoch_times.sum,
+                 "job/throughput/bathces_per_sec": job_num_batches.sum / job_epoch_times.sum,
+                 "job/throughput/epochs_per_sec": job_epoch_times.count / job_epoch_times.sum,
+                  "job/best_acc1": best_prec1,
+                  "job/best_acc5": best_prec5,
+                  "job/loss": best_loss,
+                  }
+    epoch_train_metrics.update(job_metrics)
+    fabric.loggers[0].log_metrics(epoch_train_metrics,state["step_count"])
 
 
-def train(
-    fabric: L.Fabric,
-    state: dict,
-    train_dataloader: DataLoader,
-    val_dataloader: DataLoader,
-    speed_monitor: SpeedMonitorBase,
-) -> None:
-    model = state["model"]
-    optimizer = state["optimizer"]
 
-    #validate(fabric, model, val_dataloader)  # sanity check
+'''
+model: This is your neural network model, which takes input data (inputs) and produces output predictions (outputs).
+criterion: This is your loss function, which measures the difference between the model's predictions and the true targets.
+optimizer: This is the optimization algorithm used to update the model's parameters based on the computed gradients.
+The forward pass involves feeding the input data (inputs) through the neural network (model) to obtain predictions (outputs).
+The loss is then computed by comparing the predictions to the true targets (targets) using the specified loss function (criterion).
+The backward pass is where the gradients of the loss with respect to the model parameters are computed.
+optimizer.zero_grad() is called to zero out the gradients of all the model parameters. This is essential to prevent gradient accumulation from previous iterations.
+loss.backward() computes the gradients of the loss with respect to each model parameter using the chain rule of calculus.
+After the backward pass, the optimizer (optimizer.step()) is called to update the model parameters based on the computed gradients.
+The optimizer uses an optimization algorithm (in this case, stochastic gradient descent - SGD) to adjust the parameters in the direction that reduces the loss.
+Gradients represent the partial derivatives of the loss with respect to each model parameter. They indicate the direction and magnitude of the steepest increase of the loss.
+During the backward pass, gradients are computed using backpropagation, and they guide the optimizer in adjusting the model parameters to minimize the loss.
+'''
 
-    with torch.device("meta"):
-        meta_model = GPT(model.config)
-        # "estimated" is not as precise as "measured". Estimated is optimistic but widely used in the wild.
-        # When comparing MFU or FLOP numbers with other projects that use estimated FLOPs,
-        # consider passing `SpeedMonitor(flops_per_batch=estimated_flops)` instead
-        estimated_flops = estimate_flops(meta_model) * micro_batch_size
-        fabric.print(f"Estimated TFLOPs: {estimated_flops * fabric.world_size / 1e12:.2f}")
-        x = torch.randint(0, 1, (micro_batch_size, model.max_seq_length))
-        measured_flops = measure_flops(meta_model, x)
-        fabric.print(f"Measured TFLOPs: {measured_flops * fabric.world_size / 1e12:.2f}")
-        del meta_model, x
+def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int) -> None:
    
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    comp_time = AverageMeter()
-    losses = AverageMeter()
+    model:torch.nn.Module = state["model"]
+    optimizer:torch.optim.SGD = state["optimizer"]
+    hparams = state["hparams"]
 
-    total_lengths = 0
-    total_t0 = time.perf_counter()
- 
-    train_iter = iter(train_dataloader)
+    batch_time = AverageMeter("batch", ":6.3f")
+    data_time = AverageMeter("data", ":6.3f")
+    compute_time = AverageMeter("compute", ":6.3f")
+    losses = AverageMeter("Loss", ":.4e")
+    top1 = AverageMeter("Acc@1", ":6.2f")
+    top5 = AverageMeter("Acc@5", ":6.2f")
+
+    progress = ProgressMeter(
+        len(train_dataloader), [batch_time, data_time, compute_time, losses, top1, top5], prefix="Epoch: [{}]".format(epoch)
+    )
+
+    # switch to train mode
+    fabric.print("training ...")
+    model.train()
 
     end = time.perf_counter()
-    dataset_time = compute_time = 0
 
-    for state["iter_num"] in range(state["iter_num"], max_iters):
-
-        # determine and set the learning rate for this iteration
-        lr = get_lr(state["iter_num"]) if decay_lr else learning_rate
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
-
-        input_ids, targets = next(train_iter)
-        
-        # measure data loading time
+    for batch_idx, (input, target) in enumerate(train_dataloader):
+        # NOTE: no need to call `.to(device)` on the data, target
         data_time.update(time.perf_counter() - end)
-        dataset_time += (time.perf_counter() - end)
+
         #-----------------Stop data, start compute------#
-        if data_profile:
-            torch.cuda.synchronize()
-        compute_start = time.perf_counter()
-        #-----------------------------------------------# 
-        # compute output
-        is_accumulating = (state["iter_num"] + 1) % gradient_accumulation_steps != 0
-        with fabric.no_backward_sync(model, enabled=is_accumulating):
-            logits = model(input_ids)
-            loss = chunked_cross_entropy(logits, targets, chunk_size=0)
-            fabric.backward(loss / gradient_accumulation_steps)
+        if hparams.data_profile:
+            torch.cuda.synchronize() # Synchronize before timing GPU operations  
         
-        losses.update(to_python_float(loss.data), input_ids.size(0))
+        compute_start = time.perf_counter()
 
-        if not is_accumulating:
-            # compute gradient and do SGD step
-           fabric.clip_gradients(model, optimizer, max_norm=grad_clip)
-           optimizer.step()
-           optimizer.zero_grad()
-           state["step_count"] += 1
+        # Forward pass
+        output = model(input)
+        loss = F.cross_entropy(output, target)
 
+        # measure accuracy and record loss
+        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+        losses.update(to_python_float(loss.data), input.size(0))
+        top1.update(to_python_float(prec1), input.size(0))
+        top5.update(to_python_float(prec5), input.size(0))
+        
+        #Backward pass
+        optimizer.zero_grad() # Zero the gradients
+        fabric.backward(loss)  # instead of loss.backward()  #Computes gradients
+        optimizer.step()  # Update model parameters
+        
         torch.cuda.synchronize()
-        #-----------------Stop compute------#
-        comp_time.update(time.perf_counter() - compute_start)
-        compute_time += (comp_time.val)
 
+        compute_time.update(time.perf_counter() - compute_start)
+        # measure elapsed time
         batch_time.update(time.perf_counter() - end)
 
-        total_lengths += input_ids.size(1)
-        speed_monitor.on_train_batch_end(
-            (state["iter_num"] + 1) * micro_batch_size,
-            time.perf_counter() - total_t0,
-            # this assumes that device FLOPs are the same and that all devices have the same batch size
-            fabric.world_size,
-            flops_per_batch=measured_flops,
-            lengths=total_lengths,
-            loss = losses.val,
-            dataloading_time=data_time.val,
-            forwrd_bkwrd_step= comp_time.val,
-            step_time = batch_time.val
-        )
+        state["step_count"] +=1
         
-        if state["iter_num"] % log_interval == 0:
-            fabric.print(
-                f"iter {state['iter_num']} step {state['step_count']}: loss {loss.item():.4f}, iter time:"
-                f" {(batch_time.val) * 1000:.2f}ms{' (optimizer.step)' if not is_accumulating else ''}"
-            )
+        log_data = {
+             "epoch": epoch,
+             "batch_idx": batch_idx,
+             "batch/num_samples": input.size(0),
+             "batch/batch_time": batch_time.val,
+             "batch/dataloading_time": data_time.val,
+             "batch/compute_time": compute_time.val,
+             "batch/throughput/samples_per_sec": input.size(0) / batch_time.val,
+             "batch/loss": losses.avg,
+             "batch/acc@1": top1.avg,
+             "batch/acc@5": top5.avg,
+             }
+        
+        if batch_idx + 1 == hparams.num_minibatches and not hparams.full_epoch or batch_idx == len(train_dataloader):
+            progress.display(batch_idx)
+            
+            epoch_metrics = {
+                 "epoch/total_batches": data_time.count,
+                 "epoch/total_samples": len(train_dataloader.dataset),
+                 "epoch/epoch_time": batch_time.sum,
+                 "epoch/dataloading_time": data_time.sum,
+                 "epoch/compute_time": compute_time.sum,
+                 "epoch/throughput/samples_per_sec": len(train_dataloader.dataset)/ batch_time.sum,
+                 "epoch/loss": losses.avg,
+                 "epoch/acc@1": top1.avg,
+                 "epoch/acc@5": top5.avg,
+                 }
+            
+            log_data.update(epoch_metrics)
 
-        if not is_accumulating and state["step_count"] % eval_interval == 0:
-            t0 = time.perf_counter()
-            val_loss = validate(fabric, model, val_dataloader)
-            t1 = time.perf_counter() - t0
-            speed_monitor.eval_end(t1)
-            fabric.print(f"step {state['iter_num']}: val loss {val_loss.item():.4f}, val time: {t1 * 1000:.2f}ms")
-            fabric.barrier()
-        if not is_accumulating and state["step_count"] % save_interval == 0 and always_save_checkpoint:
-            checkpoint_path = out_dir / f"iter-{state['iter_num']:06d}-ckpt.pth"
-            fabric.print(f"Saving checkpoint to {str(checkpoint_path)!r}")
-            fabric.save(checkpoint_path, state)
+
+        elif (batch_idx == 0) or ((batch_idx + 1) % hparams.log_interval == 0):       
+                progress.display(batch_idx)
+                fabric.loggers[0].log_metrics(log_data,state["step_count"])
         
         end = time.perf_counter()
 
+        if batch_idx+1 == hparams.num_minibatches and not hparams.full_epoch:
+            break
 
-@torch.inference_mode()
-def validate(fabric: L.Fabric, model: torch.nn.Module, val_dataloader: DataLoader) -> torch.Tensor:
+    return log_data
+
+
+def validate(fabric: L.Fabric, model: torch.nn.Module, val_dataloader: DataLoader, hparams) -> torch.Tensor:
+    
+    batch_time = AverageMeter("batch", ":6.3f")
+    losses = AverageMeter("Loss", ":.4e")
+    top1 = AverageMeter("Acc@1", ":6.2f")
+    top5 = AverageMeter("Acc@5", ":6.2f")
+    
+    # switch to evaluate mode
     fabric.print("Validating ...")
     model.eval()
-    val_iter = iter(val_dataloader)
 
-    losses = torch.zeros(eval_iters, device=fabric.device)
-    for k in range(eval_iters):
-        input_ids, targets = next(val_iter)
-        logits = model(input_ids)
-        losses[k] = chunked_cross_entropy(logits, targets, chunk_size=0)
-    out = losses.mean()
+    end = time.time()
 
-    model.train()
-    return out
+    test_loss = 0
+    for batch_idx, (input, target) in enumerate(val_dataloader):
+        # compute output
+        with torch.no_grad():
+            output = model(input)
+            loss = F.cross_entropy(output, target)
+        
+        # measure accuracy and record loss
+        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+        
+        losses.update(to_python_float(loss), input.size(0))
+        top1.update(to_python_float(prec1), input.size(0))
+        top5.update(to_python_float(prec5), input.size(0))
+        
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
 
+        if batch_idx+1 == hparams.num_minibatches and not hparams.full_epoch:
+            break
+    
+    fabric.print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
+    return top1.avg, top5.avg, losses.avg
+    
+    # all_gather is used to aggregated the value across processes
+    #test_loss = fabric.all_gather(test_loss).sum() / len(val_dataloader.dataset)
+    #print(f"\nTest set: Average loss: {test_loss:.4f}, Accuracy: ({100 * test_acc.compute():.0f}%)\n")
 
-def load_datasets(data_dir: Path, max_seq_length: int) -> Tuple["Dataset", "Dataset"]:
-    train_data = Dataset(data_dir / "train.bin", max_seq_length)
-    val_data = Dataset(data_dir / "val.bin", max_seq_length)
-    return train_data, val_data
+def accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified
+    values of k."""
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
 
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
 
-class Dataset(IterableDataset):
-    def __init__(self, data_file: Path, max_seq_length: int):
-        super().__init__()
-        self.data_file = data_file
-        self.max_seq_length = max_seq_length
-
-    def __iter__(self):
-        data = np.memmap(self.data_file, dtype=np.uint16, mode="r")
-        while True:
-            i = torch.randint(len(data) - self.max_seq_length, (1,)).item()
-            x = torch.from_numpy((data[i : i + self.max_seq_length]).astype(np.int64))
-            y = torch.from_numpy((data[i + 1 : i + 1 + self.max_seq_length]).astype(np.int64))
-            yield x, y
-
-
-# learning rate decay scheduler (cosine with warmup)
-def get_lr(it: int) -> float:
-    # 1) linear warmup for warmup_iters steps
-    if it < warmup_iters:
-        return learning_rate * it / warmup_iters
-    # 2) if it > lr_decay_iters, return min learning rate
-    if it > lr_decay_iters:
-        return min_lr
-    # 3) in between, use cosine decay down to min learning rate
-    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
-    return min_lr + coeff * (learning_rate - min_lr)
-'''
+        res = []
+        for k in topk:
+            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
 if __name__ == "__main__":
     # Uncomment this line if you see an error: "Expected is_sm80 to be true, but got false"

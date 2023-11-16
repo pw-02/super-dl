@@ -1,21 +1,25 @@
 gprc_port: 50052
 task: train
-num_workers: 0
+num_workers: 4
 lr: 1e-4
 arch: resnet18
 weight_decay: 1e-4
 momentum: 0.9
-batch_size: 256
-max_epochs: 3
+batch_size: 64
+max_epochs: 2
 dataset_name: cifar10
-save_dir: mlworkloads/vision/out/cifar10"
-data_dir: mlworkloads/vision/data/cifar10
+save_dir: mlworkloads/vision/out/cifar10
+data_dir: mlworkloads/vision/data/cifar-10
 log_dir: mlworkloads/vision/logs
 log_interval: 1
 always_save_checkpoint: False
 source_system: "local"
-cache_host: "10.0.1.197:6379"
-
+cache_host: "10.0.1.197"
+dry_run: False
+data_profile: False
+#num_minibatches: 2
+full_epoch: True
+no_eval: False
 
 #gpus: 0
 #deterministic: True

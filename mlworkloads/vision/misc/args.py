@@ -134,4 +134,26 @@ def add_input_args(parser):
         "--cache_host",
         default="10.0.1.197:6379",
     )
+
+    parser.add(
+        "--dry_run",
+        action="store_true",
+    )
+    parser.add(
+        "--data_profile",
+        action="store_true",
+    )
+    parser.add(
+        "--full_epoch",
+        action="store_true",
+    )
+    parser.add(
+        "--num_minibatches",
+        type=int,
+        default=50,
+    )
+    parser.add(
+        "--no_eval",
+        action="store_true",
+    )
     return parser
