@@ -55,7 +55,6 @@ class SimpleBatchSampler(Sampler):
 
 
 
-
 class MyDataset:
     def __init__(self, xs, ys):
         self.xs = xs

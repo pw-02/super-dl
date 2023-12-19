@@ -3,6 +3,7 @@ torchvision
 lightning
 configargparse
 jsonargparse
+boto3
 grpcio
 grpcio-tools
 #nlp workload

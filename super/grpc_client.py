@@ -44,11 +44,11 @@ def send_training_metrics(training_job, training_speed, x):
 
 if __name__ == '__main__':
     # Example with periodic sending
-    training_job = TrainingJob(order_of_batches=list(range(1, 10000001)))
+    training_job = TrainingJob(order_of_batches=list(range(1, 100)))
 
     # Set the desired batch count threshold and send interval
-    batch_count_threshold = 500
-    send_interval = 60
+    batch_count_threshold = 5
+    send_interval = 10
 
     while training_job.position < len(training_job.order_of_batches):
         # Send batches when the threshold or interval is reached

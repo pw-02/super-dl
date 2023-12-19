@@ -5,8 +5,8 @@ lr: 1e-4
 arch: resnet18
 weight_decay: 1e-4
 momentum: 0.9
-batch_size: 64
-max_epochs: 2
+batch_size: 128
+max_epochs: 20
 dataset_name: cifar10
 save_dir: mlworkloads/vision/out/cifar10
 data_dir: mlworkloads/vision/data/cifar-10
