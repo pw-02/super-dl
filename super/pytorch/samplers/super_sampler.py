@@ -109,7 +109,7 @@ class SuperSampler(SuperBatchSampler):
         super(SuperSampler, self).__init__(sampler, batch_size, drop_last)
         self.grpc_server_address = grpc_server_address
         self.grpc_client = None
-        self.prefetch_batches = 20
+        self.prefetch_batches = 10
 
     def __iter__(self) -> Iterator[List[int]]:
         batch_buffer = []
@@ -128,7 +128,7 @@ class SuperSampler(SuperBatchSampler):
                         break
                 print(batch_buffer)
             
-            elif len(batch_buffer) <= self.prefetch_batches:
+            elif len(batch_buffer) <= self.prefetch_batches and any(batch_iter):
                 prefecth_buffer =[]
                 prefecth_batch_id_buffer =[]
                 for _ in range(self.prefetch_batches):
