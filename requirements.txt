@@ -5,6 +5,8 @@ configargparse
 jsonargparse
 redis
 
+#export PYTHONPATH=/workspaces/super-dl
+
 #nlp workload
 #tiktoken
 #datasets

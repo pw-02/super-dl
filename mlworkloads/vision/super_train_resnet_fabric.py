@@ -1,4 +1,7 @@
 import sys
+#print(sys.path)
+#sys.path.insert(0, '/workspaces/super-dl')
+
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -11,8 +14,11 @@ from misc.args import parse_args
 from misc.utils import get_default_supported_precision, num_parameters, AverageMeter, ProgressMeter
 from torchmetrics.classification import Accuracy
 from pytorch.custom_dataset import SUPERVisionDataset
-from pytorch.custom_batch_sampler import SimpleBatchSampler
+from pytorch.super_sampler import SUPERSampler
 import torch.nn.functional as F
+import os
+# Import CacheCoordinatorClient
+from super_dl.cache_coordinator_client import CacheCoordinatorClient
 
 # support running without installing as a package
 wd = Path(__file__).parent.parent.resolve()
@@ -37,18 +43,23 @@ def setup(devices: int = 1, precision: Optional[str] = None, resume: Union[bool,
         )
     else:
         strategy = "auto"
-
+    
     # Create the Lightning Fabric object. The parameters like accelerator, strategy, devices etc. will be proided
     # by the command line. See all options: `lightning run model --help`
-    
     logger = CSVLogger(hparams.log_dir, hparams.dataset_name, flush_logs_every_n_steps=hparams.log_interval)
     fabric = L.Fabric(accelerator="gpu",devices=devices, strategy=strategy, precision=precision, loggers=[logger])
     fabric.print(hparams)
     fabric.launch(main, resume=resume, hparams=hparams)
 
-def main(fabric: L.Fabric, resume: Union[bool, Path],hparams) -> None:
 
+def main(fabric: L.Fabric, resume: Union[bool, Path],hparams) -> None:
+   
     from torchvision import models, transforms
+    cache_coordinator_client = CacheCoordinatorClient(server_address=hparams.gprc_server_address)
+
+    # Register the job with the Cache Coordinator service
+    hparams.job_id = os.getpid()
+    cache_coordinator_client.register_job(job_id= hparams.job_id, data_dir=hparams.data_dir, source_system='local')
 
     fabric.loggers[0].log_hyperparams(vars(hparams))
     
@@ -78,19 +89,28 @@ def main(fabric: L.Fabric, resume: Union[bool, Path],hparams) -> None:
          #transforms.CenterCrop(224), 
          transforms.ToTensor(), normalize]
     )
- 
+
     train_data = SUPERVisionDataset(source_system=hparams.source_system,cache_host=hparams.cache_host,
                                     data_dir=hparams.data_dir,prefix='train', transform=transformations)
-    val_data = SUPERVisionDataset(source_system=hparams.source_system,cache_host=hparams.cache_host,
-                                    data_dir=hparams.data_dir,prefix='val',transform=transformations)
     
-    train_sampler = SimpleBatchSampler(dataset_size=len(train_data),batch_size=hparams.batch_size)
-    val_sampler = SimpleBatchSampler(dataset_size=len(val_data),batch_size=hparams.batch_size)
-    
-    train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=None, num_workers=hparams.num_workers)
-    val_dataloader = DataLoader(val_data,sampler=val_sampler, batch_size=None, num_workers=hparams.num_workers)
+    train_sampler = SUPERSampler(data_source=train_data,
+                                 grpc_client=cache_coordinator_client, 
+                                 shuffle=False, 
+                                 seed=0,
+                                 batch_size=64, 
+                                 drop_last=False)
 
-    train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, val_dataloader)
+    train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=None, num_workers=hparams.num_workers)
+
+    if hparams.no_eval:     
+        val_data = SUPERVisionDataset(source_system=hparams.source_system,cache_host=hparams.cache_host,
+                                    data_dir=hparams.data_dir,prefix='val',transform=transformations)
+        val_sampler = SUPERSampler(dataset_size=len(val_data),batch_size=hparams.batch_size)
+        val_dataloader = DataLoader(val_data,sampler=val_sampler, batch_size=None, num_workers=hparams.num_workers) 
+        train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, val_dataloader)
+    else:
+        train_dataloader = fabric.setup_dataloaders(train_dataloader)
+
     state = {"model": model, "optimizer": optimizer, "hparams": hparams, "iter_num": 0, "step_count": 0}
 
     '''

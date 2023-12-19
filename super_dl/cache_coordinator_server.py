@@ -20,18 +20,14 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
     
     def SendBatchAccessPattern(self, request, context):
         # Implement SendBatchAccessPattern logic
-        print(f"Received BatchAccessPattern for Job {request.job_id}: {request.batch_indices}")
+        for batch in request.batches:
+            print(f"Received Batch Order - Batch ID: {batch.batch_id}, Indices: {batch.batch_indices}")
         return google.protobuf.empty_pb2.Empty()
-    
-    
-
-
 
 
     def SendMetrics(self, request, context):
         # Implement SendMetrics logic
         return google.protobuf.empty_pb2.Empty()
-
 
 
 def serve():

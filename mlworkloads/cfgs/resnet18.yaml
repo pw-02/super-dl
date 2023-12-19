@@ -1,4 +1,4 @@
-gprc_port: 50052
+gprc_server_address: localhost:50051
 task: train
 num_workers: 4
 lr: 1e-4
@@ -19,7 +19,7 @@ dry_run: False
 data_profile: False
 #num_minibatches: 2
 full_epoch: True
-no_eval: False
+no_eval: True
 
 #gpus: 0
 #deterministic: True

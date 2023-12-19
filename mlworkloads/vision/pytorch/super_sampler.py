@@ -1,6 +1,7 @@
 import torch
 from typing import Iterator, Optional, List, TypeVar, Sized, Union, Iterable
 from torch.utils.data import Sampler
+from super_dl.cache_coordinator_client import CacheCoordinatorClient
 
 T = TypeVar('T')
 
@@ -8,10 +9,8 @@ class MyDataset:
     def __init__(self, xs: List[T], ys: List[T]) -> None:
         self.xs = xs
         self.ys = ys
-
     def __getitem__(self, idx: int) -> int:
         return idx
-
     def __len__(self) -> int:
         return len(self.xs)
 
@@ -104,68 +103,72 @@ class SuperBatchSampler(Sampler[List[int]]):
         else:
             raise ValueError("The underlying sampler must be an instance of SuperBaseSampler")
 
-class SuperSampler(SuperBatchSampler):
-    def __init__(self, sampler, batch_size, drop_last, grpc_server_address):
-        super(SuperSampler, self).__init__(sampler, batch_size, drop_last)
-        self.grpc_server_address = grpc_server_address
-        self.grpc_client = None
-        self.prefetch_batches = 10
+class SUPERSampler(SuperBatchSampler):
+    def __init__(self, data_source: Sized, grpc_client: CacheCoordinatorClient, shuffle: bool = True, seed: int = 0, 
+                 batch_size:int = 4, drop_last: bool = False, prefetch_look_ahead = 10):
+        
+        base_sampler = SuperBaseSampler(data_source=data_source, shuffle=shuffle, seed=seed)
+        
+        super(SUPERSampler, self).__init__(base_sampler, batch_size, drop_last)
+        self.grpc_client = grpc_client
+        self.prefetch_look_ahead = prefetch_look_ahead
+    
+    def share_future_batch_accesses(self, batches: list):
+        # Use the CacheCoordinatorClient to send batch order to the service
+        if len(batches) > 0:
+            self.grpc_client.send_batch_access_pattern(batches)
 
     def __iter__(self) -> Iterator[List[int]]:
         batch_buffer = []
-        batch_id_buffer = []
         first_iteration = True
-        batch_iter = super().__iter__()
-
+        batch_iter = super().__iter__() 
+        
         while True:
             if first_iteration:
-                while len(batch_buffer) < self.prefetch_batches * 2:
+                while len(batch_buffer) <= self.prefetch_look_ahead * 2:
                     try:
-                        batch_indices, batch_id = next(batch_iter)
-                        batch_buffer.append(batch_indices)
-                        batch_id_buffer.append(batch_id)
+                        batch_buffer.append(next(batch_iter))
                     except StopIteration:
                         break
-                print(batch_buffer)
+                # Send batch order to the service
+                self.share_future_batch_accesses(batch_buffer)
             
-            elif len(batch_buffer) <= self.prefetch_batches and any(batch_iter):
+            elif len(batch_buffer) <= self.prefetch_look_ahead:
                 prefecth_buffer =[]
-                prefecth_batch_id_buffer =[]
-                for _ in range(self.prefetch_batches):
+                for _ in range(self.prefetch_look_ahead):
                     try:
-                        batch_indices, batch_id = next(batch_iter)
-                        prefecth_buffer.append(batch_indices)
-                        prefecth_batch_id_buffer.append(batch_id)
+                        prefecth_buffer.append(next(batch_iter))
                     except StopIteration:
                         break
+                # Send batch order to the service
+                self.share_future_batch_accesses(prefecth_buffer)
                 batch_buffer += prefecth_buffer
-                batch_id_buffer += prefecth_batch_id_buffer
-                print(prefecth_buffer)
-                print(batch_buffer)
 
             if not batch_buffer:
                 break
 
             batch = batch_buffer.pop(0)
-            batch_id = batch_id_buffer.pop(0)
 
-            yield batch, batch_id
+            yield batch
             first_iteration = False   
-
-    def set_grpc_server_address(self, grpc_server_address):
-        self.grpc_server_address = grpc_server_address
-        # Update the gRPC client with the new server address
-        if self.grpc_client:
-            self.grpc_client.set_server_address(grpc_server_address)
 
 # Usage example
 if __name__ == "__main__":
+    import os
     xs = list(range(100))
     ys = list(range(100, 1000))
     dataset = MyDataset(xs, ys)
     base_sampler = SuperBaseSampler(dataset, shuffle=False)
 
-    super_grpc_batch_sampler = SuperSampler(base_sampler, 1, False, None)
+    cache_coordinator_client = CacheCoordinatorClient()
+    cache_coordinator_client.register_job(os.getpid(),data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
+    
+    super_grpc_batch_sampler = SUPERSampler(data_source=dataset,
+                                            grpc_client=cache_coordinator_client,
+                                            shuffle=False,
+                                            seed=0,
+                                            batch_size=1,
+                                            drop_last=False)
 
     train_loader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=None, sampler=super_grpc_batch_sampler)
 

@@ -3,13 +3,27 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";  // Import Empty type
 /* 
 Command to create stub files:
-  python -m grpc_tools.protoc --proto_path=. ./super/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+  python -m grpc_tools.protoc --proto_path=. ./super_dl/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
 */
 service CacheCoordinatorService {
   rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
   rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
-  rpc SendBatchAccessPattern(BatchAccessPattern) returns (google.protobuf.Empty);
+  rpc SendBatchAccessPattern(BatchAccessPatternList) returns (google.protobuf.Empty);
 }
+
+
+message BatchAccessPatternList {
+    repeated Batch batches = 1;
+  // Add other information as needed.
+}
+
+message Batch {
+  int64 batch_id = 1;
+  repeated int32 batch_indices = 2;
+  // Add other information as needed.
+}
+
+
 message RegisterJobResponse {
   string message =1;
   bool job_is_registered = 2;
@@ -28,8 +42,3 @@ message MetricsRequest {
   // Add job-specific metrics.
 }
 
-message BatchAccessPattern {
-  string job_id = 1;
-  repeated int32 batch_indices = 2;
-  // Add other information as needed.
-}

@@ -21,8 +21,8 @@ def parse_args(default_config_file):
 def add_input_args(parser):
     """Adds arguments not handled by Trainer or model."""
     parser.add(
-        "--gprc_port",
-        default='50051',
+        "--gprc_server_address",
+        default='localhost:50051',
         help="port for gprc server.",
     )
     parser.add(
