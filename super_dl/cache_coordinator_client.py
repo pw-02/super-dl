@@ -24,15 +24,12 @@ class CacheCoordinatorClient:
         #self.stub.SendMetrics(metrics)
         pass
 
-    def send_batch_access_pattern(self, batches:list):
-        batch_accesses_list = cache_coordinator_pb2.BatchAccessPatternList(
+    def send_batch_access_pattern(self,job_id, batches:list):
+        batch_accesses_list = cache_coordinator_pb2.BatchAccessPatternList(job_id=job_id,
             batches=[cache_coordinator_pb2.Batch(batch_id=batch[1], batch_indices=batch[0]) for batch in batches])
         response = self.stub.SendBatchAccessPattern(batch_accesses_list)
         # Process the server response if needed
         print("Server Response:", response)
-
-
-
 
 # Example usage
 def main():

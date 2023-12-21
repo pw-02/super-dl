@@ -2,6 +2,7 @@ import torch
 from typing import Iterator, Optional, List, TypeVar, Sized, Union, Iterable
 from torch.utils.data import Sampler
 from super_dl.cache_coordinator_client import CacheCoordinatorClient
+import asyncio
 
 T = TypeVar('T')
 
@@ -104,7 +105,7 @@ class SuperBatchSampler(Sampler[List[int]]):
             raise ValueError("The underlying sampler must be an instance of SuperBaseSampler")
 
 class SUPERSampler(SuperBatchSampler):
-    def __init__(self, data_source: Sized, grpc_client: CacheCoordinatorClient, shuffle: bool = True, seed: int = 0, 
+    def __init__(self, data_source: Sized, job_id: int, grpc_client: CacheCoordinatorClient, shuffle: bool = True, seed: int = 0, 
                  batch_size:int = 4, drop_last: bool = False, prefetch_look_ahead = 10):
         
         base_sampler = SuperBaseSampler(data_source=data_source, shuffle=shuffle, seed=seed)
@@ -112,11 +113,12 @@ class SUPERSampler(SuperBatchSampler):
         super(SUPERSampler, self).__init__(base_sampler, batch_size, drop_last)
         self.grpc_client = grpc_client
         self.prefetch_look_ahead = prefetch_look_ahead
-    
+        self.job_id = job_id
+        
     def share_future_batch_accesses(self, batches: list):
         # Use the CacheCoordinatorClient to send batch order to the service
         if len(batches) > 0:
-            self.grpc_client.send_batch_access_pattern(batches)
+            self.grpc_client.send_batch_access_pattern(job_id=self.job_id, batches=batches)
 
     def __iter__(self) -> Iterator[List[int]]:
         batch_buffer = []
@@ -159,11 +161,11 @@ if __name__ == "__main__":
     ys = list(range(100, 1000))
     dataset = MyDataset(xs, ys)
     base_sampler = SuperBaseSampler(dataset, shuffle=False)
-
+    job_id = os.getpid()
     cache_coordinator_client = CacheCoordinatorClient()
-    cache_coordinator_client.register_job(os.getpid(),data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
-    
-    super_grpc_batch_sampler = SUPERSampler(data_source=dataset,
+    cache_coordinator_client.register_job(job_id,data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
+
+    super_grpc_batch_sampler = SUPERSampler(data_source=dataset, job_id= job_id,
                                             grpc_client=cache_coordinator_client,
                                             shuffle=False,
                                             seed=0,
