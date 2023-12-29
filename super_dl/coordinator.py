@@ -7,6 +7,9 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 #from sklearn.linear_model import LinearRegression
 from super_dl.batch import Batch
+from super_dl.unique_priority_queue import UniquePriorityQueue
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict
 
 import logging
 logger = logging.getLogger(__name__)
@@ -17,12 +20,12 @@ logger.addHandler(logging.StreamHandler())
 class Coordinator:
     def __init__(self):
         self.jobs = {}
-        self.datasets = {}
+        self.datasets: Dict[int, Dataset] = {}
         self.batches = {}
         self.batch_queue = Queue()  # Batch queue for asynchronous processing
-        #self.prefetch_queue = Queue()  # Prefetching queue
+        self.prefetch_queue = UniquePriorityQueue()  # Prefetching queue
         self.prefetch_queue_lock = threading.Lock()
-        self.prefetch_queue = {}  # Use a dictionary for prefetching queue
+        #self.prefetch_queue = {}  # Use a dictionary for prefetching queue
         self.prefetch_workers = None
         self.batch_processing_thread = None
         #self.prefetching_thread = None
@@ -31,9 +34,9 @@ class Coordinator:
         #self.model = None  # Initialize the model as None --> might use later to create a model for predicing batch access time
 
 
-    def add_job(self, job_id):
+    def add_job(self, job_id, dataset_id):
         if job_id not in self.jobs:
-            self.jobs[job_id] = TrainingJob(job_id=job_id)
+            self.jobs[job_id] = TrainingJob(job_id=job_id, dataset_id=dataset_id)
             return True, "Job with Id '{}' Regsistered".format(job_id)
         else:
             return False, "Job with Id '{}' already exists. Not Registered.".format(job_id)
@@ -52,12 +55,12 @@ class Coordinator:
     def get_batch(self, batch_id):
         return self.batches.get(batch_id)
     
-    def add_dataset(self, source_system, data_dir):
+    def add_dataset(self, dataset_id, source_system, data_dir):
         sucess_response = True, "Access to dataset'{} in '{}' confirmed".format(data_dir,source_system)
-        if data_dir not in self.datasets:
-            dataset = Dataset(source_system, data_dir)
+        if dataset_id not in self.datasets:
+            dataset = Dataset(dataset_id, source_system, data_dir)
             if len(dataset) > 1:
-                self.datasets[data_dir] = dataset
+                self.datasets[dataset_id] = dataset
                 return sucess_response
             else:
                 return False, "No data found for dataset '{}' in '{}'".format(data_dir,source_system)
@@ -72,16 +75,22 @@ class Coordinator:
     def get_all_datasets(self):
         return list(self.datasets.values())
     
+        
+    def get_dataset(self, dataset_id):
+        return self.datasets[dataset_id]
+    
     def start_batch_processing_thread(self):
         self.batch_processing_thread = threading.Thread(target=self.process_batches, name='batch_processing_thread')
         self.batch_processing_thread.start()
     
     def start_prefetching_workers(self, num_workers=3):
-        self.prefetch_workers = ThreadPoolExecutor(max_workers=num_workers)
-        for _ in range(num_workers):
-            self.prefetch_workers.submit(self.process_prefetching)
+        # Use ThreadPoolExecutor for prefetching workers
+        self.prefetch_workers = ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix='prefetch_worker')
+        futures = [self.prefetch_workers.submit(self.process_prefetching) for _ in range(num_workers)]
+
         #self.prefetching_thread = threading.Thread(target=self.process_prefetching, name='prefetching_thread')
         #self.prefetching_thread.start()
+
 
     def stop_batch_processing_thread(self):
         self.stop_batch_processing.set()
@@ -99,49 +108,59 @@ class Coordinator:
         return self.batches[batch_id]
     
     def process_batches(self):
-        while not self.stop_batch_processing.is_set():
-            try:
-                job_id, batch_info = self.batch_queue.get(timeout=1)
-                job:TrainingJob = self.get_job(job_id)
-                # job.get_batches_awaiting_processing is the number of batches into the future
-                # the target batch will be accessed and job.processing_speed is the speed
-                # at which batches are processed
-                job.increment_batches_awaiting_processing()               
-                predicted_access_time = time.time() + (job.get_batches_awaiting_processing() * (1 / job.processing_speed))
+        try:
+            while not self.stop_batch_processing.is_set():
+                try:
+                    job_id, batch_info = self.batch_queue.get(timeout=1)
+                    job:TrainingJob = self.get_job(job_id)
+                    # job.get_batches_awaiting_processing is the number of batches into the future
+                    # the target batch will be accessed and job.processing_speed is the speed
+                    # at which batches are processed
+                    job.increment_batches_awaiting_processing()               
+                    predicted_access_time = time.time() + (job.get_batches_awaiting_processing() * (1 / job.processing_speed))
 
-                logger.info(f"Predicted Access Time - Batch ID: {batch_info.batch_id}, Predicted Time: {predicted_access_time}")
+                    #logger.info(f"Predicted Access Time - Batch ID: {batch_info.batch_id},Batch Indiciess: {batch_info.batch_indices}, Predicted Time: {predicted_access_time}")
                 
-                batch:Batch = self.get_or_create_batch(batch_id=batch_info.batch_id, batch_indices=batch_info.batch_indices)
-                batch.predicted_access_times[job_id] = predicted_access_time
-                if not batch.is_cached:
-                    with self.prefetch_queue_lock:
-                        next_access_time = batch.get_next_access_time()
-                        self.prefetch_queue[batch.batch_id] = next_access_time
+                    batch:Batch = self.get_or_create_batch(batch_id=batch_info.batch_id, batch_indices=batch_info.batch_indices)
+                    batch.predicted_access_times[job_id] = predicted_access_time
+                    if not batch.is_cached:
+                        with self.prefetch_queue_lock:
+                            next_access_time = batch.get_next_access_time()
+                            self.prefetch_queue.push(batch.batch_id, next_access_time)
 
                 # Perform further processing or enqueue for prefetching based on predicted time
-            except Empty:  # Corrected line
-                continue
+                except Empty:
+                    #time.sleep(0.5)
+                    continue
+        except KeyboardInterrupt:
+            logger.info("Stopping batch processing thread.")
+        
 
     def process_prefetching(self):
-        while not self.stop_batch_processing.is_set():
-            try:
-                with self.prefetch_queue_lock:
-                    batch_id, access_time = self.prefetch_queue.popitem()
-
-                batch:Batch = self.get_batch(batch_id)        
-                # Perform prefetching logic here
-                logger.info(f"Prefetching Batch - Batch ID: {batch.batch_id}, Indices: {batch.batch_indices}")
-                #add logic to load the batch
-                batch.set_cache_status(is_cached=True)
-                batch.set_last_pinged_time(pinged_time=time.time())
-                pass
-
-            except KeyError:
-                # Handle the case where the dictionary is empty
-                continue
+        try:
+            while not self.stop_batch_processing.is_set():
+                try:
+                    batch_id = self.prefetch_queue.pop()
     
+                    batch: Batch = self.get_batch(batch_id)
+                    # Perform prefetching logic here
+                    logger.info(f"Prefetching Batch - Batch ID: {batch.batch_id}")
 
+                    batch_cached = first_value = next(iter(self.datasets.values()), None).preload_batch(batch.batch_id, batch.batch_indices) #for now assume there is only one dataset
+                    
+                    if batch_cached == True:
+                        # add logic to load the batch
+                        batch.set_cache_status(is_cached=True)
+                        batch.set_last_pinged_time(pinged_time=time.time())
 
+                except IndexError:
+                  #time.sleep(0.5)
+                  continue
+                
+        except KeyboardInterrupt:
+            logger.info("Stopping prefetching workers.")
+        except Exception as e:
+            logger.error(f"Error in prefetching worker: {e}")
 
 
     '''

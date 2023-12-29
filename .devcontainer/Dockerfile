@@ -17,13 +17,14 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CONDA_AUTO_UPDATE_CONDA=false
 
-RUN apt update
-RUN apt install -y bash \
-    build-essential \
-    git \
-    curl \
-    ca-certificates \
-    wget \
+RUN apt update \
+    && apt install -y bash \
+                   build-essential \
+                   git \
+                   curl \
+                   ca-certificates \
+                   wget \
+                   redis-server \ 
     && rm -rf /var/lib/apt/lists
 
 # Install Miniconda and create main env
@@ -31,7 +32,7 @@ ADD https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh minico
 RUN /bin/bash miniconda3.sh -b -p /opt/conda \
     && rm miniconda3.sh \
     && /opt/conda/bin/conda install -y -c anaconda \
-    python=$PYTHON_VERSION \
+       python=$PYTHON_VERSION \
     && /opt/conda/bin/conda clean -ya
 
 RUN /opt/conda/bin/conda config --set ssl_verify False \

@@ -11,18 +11,11 @@ from PIL import Image
 import base64
 import io
 import gzip
-import torchvision.transforms as transforms
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
-transform=transforms.Compose([
-            #transforms.RandomResizedCrop(224),
-            transforms.ToTensor(),
-            #transforms.Normalize((0.1307,), (0.3081,)),
-            #transforms.GaussianBlur(11)
-            ])
 
 class Dataset:
     def __init__(self, id, source_system: str, data_dir: str,):
@@ -107,54 +100,28 @@ class Dataset:
         if self.source_system == 's3':
             images,labels = self.load_from_aws(batch_id)
         else:
-            #images,labels = self.load_from_disk(batch_indices)
-            batch_to_cache = self.craete_batch_for_cache(batch_indices,True)
-            self.redis_client.set(batch_id, batch_to_cache)
+            images,labels, batch_samples = self.load_from_disk(batch_indices)
+            batch = self.craete_batch_for_cacehe(images,labels,)
+            self.redis_client.set(batch_id, batch_samples)
             return True
     
 
-    def craete_batch_for_cache(self,batch_indices,torchFormat=True):
+    def craete_batch_for_cache(self, images,labels,torchFormat=True):
+        
         if torchFormat:
-            images = []
-            labels = []
-            for idx in batch_indices:
-                path, label = self._classed_items[idx]
-                file_extension = Path(path).suffix.replace('.','')      
-                pil_img = Image.open(path).convert("RGB")  # Convert to RGB if the image is in grayscale
-                tensor_img = transform(pil_img)
-                images.append(tensor_img)
-                labels.append(label)
-            
             with io.BytesIO() as f:
-                #torchimgs = stack(images)
-
                 tsave({'inputs': stack(images), 'labels': tensor(labels)}, f)
                 compressed = gzip.compress(f.getvalue(),compresslevel=9)
                 base_64_encoded_batch = base64.b64encode(compressed).decode('utf-8')
-            
-            return base_64_encoded_batch
+                return base_64_encoded_batch
         else:
             samples = []
-            for idx in batch_indices:
-                path, label = self._classed_items[idx]
-                file_extension = Path(path).suffix.replace('.','')      
-                
-                img = Image.open(path).convert("RGB")  # Convert to RGB if the image is in grayscale
-                
-                if self.transform is not None:
-                    img = self.transform(img)
-                         
-                # Convert image to base64
-                with io.BytesIO() as img_byte_arr:
-                    img.save(img_byte_arr, format=file_extension)
-                    images.append(img_byte_arr.getvalue())
-                    base64_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
-                samples.append((base64_encoded_img, label))  
-            
-            return json.dumps(samples)
-
+            for img, label in zip(images, labels):
+                base64_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+                samples.append((base64_encoded_img, label))
     
     def load_from_disk(self, batch_indices):
+
         images = []
         labels = []
 
@@ -170,14 +137,15 @@ class Dataset:
             # Convert image to base64
             with io.BytesIO() as img_byte_arr:
                 img.save(img_byte_arr, format=file_extension)
-                images.append(img_byte_arr.getvalue())
                 #base64_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
-                #samples.append((base64_encoded_img, label))  
+                #samples.append((base64_encoded_img, label))
+            
+            images.append(img)
             labels.append(label)
             
             # Create payload dictionary
             #payload = {'batch_data': json.dumps(samples),'isCached': False,}
-        return images, labels
+            return images, labels
         #return json.dumps(samples)
 
 

@@ -169,7 +169,7 @@ if __name__ == "__main__":
                                             grpc_client=cache_coordinator_client,
                                             shuffle=False,
                                             seed=0,
-                                            batch_size=1,
+                                            batch_size=10,
                                             drop_last=False)
 
     train_loader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=None, sampler=super_grpc_batch_sampler)

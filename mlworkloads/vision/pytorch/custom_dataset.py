@@ -9,6 +9,11 @@ import logging
 import sys
 from pathlib import Path
 import functools
+import base64
+import gzip
+import io
+from PIL import Image
+import time
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -47,6 +52,8 @@ class SUPERVisionDataset(Dataset):
         self.s3_client = boto3.client('s3')
         self.source_system = source_system
         self.transform = transform
+        self.target_transform = None
+
         if source_system == 's3':
             self._blob_classes = self._classify_blobs_s3(S3Url(data_dir))
         else:
@@ -60,11 +67,22 @@ class SUPERVisionDataset(Dataset):
         batch_indices = idx[0]
 
         # Try fetching from Redis
-        #cached_data = self.cache_host.get(f"batch:{batch_id}")
-        cached_data = None
+        start_time = time.perf_counter()
+        cached_data = self.cache_host.get(batch_id)
+        #cached_data = None
         if cached_data:
-            #print(f"Cache hit for Batch ID={batch_id}")
-            return torch.tensor(cached_data, dtype=torch.float32)
+            cache_load_time = time.perf_counter() - start_time
+            decode_start_time = time.perf_counter()
+
+            # Convert JSON batch to torch format
+            #torch_imgs, torch_lables = self.convert_json_batch_to_torch_format(cached_data)
+            torch_imgs, torch_lables = self.deserialize_torch_bacth(cached_data)
+
+            decode_time = time.perf_counter() - decode_start_time
+
+            total_load_time = time.perf_counter() - start_time
+            print(f"Cache hit for Batch ID={batch_id}, Total Load Time={total_load_time}, Cache Load Time={cache_load_time}, Decode Time={decode_time}")
+            return torch_imgs, torch_lables
                 
         # Cache miss, choose between fetching from S3 or invoking Lambda function
         if self.source_system == 's3':
@@ -76,6 +94,31 @@ class SUPERVisionDataset(Dataset):
         # Convert the list of images and labels to tensors
         return torch.stack(images),  torch.tensor(labels)
     
+    def deserialize_torch_bacth(self,batch_data):
+        batch_data = base64.b64decode(batch_data)
+        decompressed = gzip.decompress(batch_data)
+        buffer = io.BytesIO(decompressed)
+        decoded_batch = torch.load(buffer)
+        batch_imgs = decoded_batch['inputs']
+        batch_labels = decoded_batch['labels']
+        return batch_imgs,batch_labels
+    
+    def convert_json_batch_to_torch_format(self,batch_data):
+        samples = json.loads(batch_data)
+        imgs = []
+        labels  =[]
+        
+        for img,label in samples:
+            img = Image.open(io.BytesIO(base64.b64decode(img)))
+            if self.transform is not None:
+                img = self.transform(img)
+            if self.target_transform is not None:
+                label = self.target_transform(label)
+
+            imgs.append(img)
+            labels.append(label)
+
+        return torch.stack(imgs), torch.tensor(labels)
 
     def invoke_lambda_function(self, batch_id):
         lambda_client = boto3.client('lambda')

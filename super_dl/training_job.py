@@ -2,7 +2,7 @@
 import threading
 
 class TrainingJob:
-    def __init__(self, job_id, job_ended=False, total_epochs=0, current_epoch_id=0, current_epoch_progress=0.0, training_speed=1.0):
+    def __init__(self, job_id,dataset_id, job_ended=False, total_epochs=0, current_epoch_id=0, current_epoch_progress=0.0, training_speed=1.0):
         self.job_id = job_id
         self.job_ended = job_ended
         self.total_epochs = total_epochs
@@ -11,6 +11,7 @@ class TrainingJob:
         self.processing_speed = training_speed
         self.batches_awaiting_processing = 0
         self.lock = threading.Lock()
+        self.dataset_id = dataset_id
 
     def update_status(self, job_ended=None, total_epochs=None, current_epoch_id=None, current_epoch_progress=None, training_speed=None):
         if job_ended is not None:

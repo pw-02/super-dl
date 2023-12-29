@@ -94,15 +94,18 @@ def main(fabric: L.Fabric, resume: Union[bool, Path],hparams) -> None:
                                     data_dir=hparams.data_dir,prefix='train', transform=transformations)
     
     train_sampler = SUPERSampler(data_source=train_data,
-                                 grpc_client=cache_coordinator_client, 
-                                 shuffle=False, 
+                                 job_id=hparams.job_id,
+                                 grpc_client=cache_coordinator_client,
+                                 
+                                 shuffle=True, 
                                  seed=0,
-                                 batch_size=64, 
-                                 drop_last=False)
+                                 batch_size=256, 
+                                 drop_last=False,
+                                 prefetch_look_ahead=30)
 
     train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=None, num_workers=hparams.num_workers)
 
-    if hparams.no_eval:     
+    if not hparams.no_eval:     
         val_data = SUPERVisionDataset(source_system=hparams.source_system,cache_host=hparams.cache_host,
                                     data_dir=hparams.data_dir,prefix='val',transform=transformations)
         val_sampler = SUPERSampler(dataset_size=len(val_data),batch_size=hparams.batch_size)
@@ -291,6 +294,19 @@ def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int
 
         if batch_idx+1 == hparams.num_minibatches and not hparams.full_epoch:
             break
+        
+        epoch_metrics = {
+                 "epoch/total_batches": data_time.count,
+                 "epoch/total_samples": len(train_dataloader.dataset),
+                 "epoch/epoch_time": batch_time.sum,
+                 "epoch/dataloading_time": data_time.sum,
+                 "epoch/compute_time": compute_time.sum,
+                 "epoch/throughput/samples_per_sec": len(train_dataloader.dataset)/ batch_time.sum,
+                 "epoch/loss": losses.avg,
+                 "epoch/acc@1": top1.avg,
+                 "epoch/acc@5": top5.avg,
+                 }
+        log_data.update(epoch_metrics)
 
     return log_data
 

@@ -4,6 +4,7 @@ import protos.cache_coordinator_pb2 as cache_coordinator_pb2
 import protos.cache_coordinator_pb2_grpc as cache_coordinator_pb2_grpc
 import google.protobuf.empty_pb2
 from coordinator import Coordinator
+import hashlib
 
 import logging
 logger = logging.getLogger(__name__)
@@ -16,11 +17,14 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
 
     def RegisterJob(self, request, context):
         #First confirm access to the data source
-        data_accessible, message = self.coordinator.add_dataset(request.source_system, request.data_dir)
+        combined_str = f"{request.source_system}_{request.data_dir}"
+        dataset_id = hashlib.sha256(combined_str.encode()).hexdigest()
+        
+        data_accessible, message = self.coordinator.add_dataset(dataset_id = dataset_id, source_system= request.source_system, data_dir= request.data_dir)
         if not data_accessible:
             return cache_coordinator_pb2.RegisterJobResponse(message = message, job_is_registered = False)    
         #now register the job, it will not register if the job already exists
-        job_registered, message = self.coordinator.add_job(request.job_id)
+        job_registered, message = self.coordinator.add_job(request.job_id, dataset_id=dataset_id)
         return cache_coordinator_pb2.RegisterJobResponse(message = message, job_is_registered = job_registered)
     
     def SendBatchAccessPattern(self, request, context):
@@ -28,7 +32,7 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
         logger.info(f"Received Batch Access Pattern for Job {request.job_id}:")
         for batch in request.batches:
             self.coordinator.batch_queue.put((request.job_id,batch))
-            logger.info(f"Batch ID: {batch.batch_id}, Indices: {batch.batch_indices}")
+            #logger.info(f"Batch ID: {batch.batch_id}, Indices: {batch.batch_indices}")
         return google.protobuf.empty_pb2.Empty()
     
 
@@ -49,7 +53,7 @@ def serve():
     coordinator.start_batch_processing_thread()
 
     # Start the prefetching workers
-    coordinator.start_prefetching_workers()
+    coordinator.start_prefetching_workers(num_workers=8)
 
 
 

@@ -1,6 +1,6 @@
 gprc_server_address: localhost:50051
 task: train
-num_workers: 4
+num_workers: 0
 lr: 1e-4
 arch: resnet18
 weight_decay: 1e-4
@@ -14,7 +14,8 @@ log_dir: mlworkloads/vision/logs
 log_interval: 1
 always_save_checkpoint: False
 source_system: "local"
-cache_host: "10.0.1.197"
+#cache_host: "10.0.1.197"
+cache_host: "localhost"
 dry_run: False
 data_profile: False
 #num_minibatches: 2
