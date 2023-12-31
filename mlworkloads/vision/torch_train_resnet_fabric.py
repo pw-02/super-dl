@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader
 from misc.args import parse_args
 from misc.utils import get_default_supported_precision, num_parameters, AverageMeter, ProgressMeter
 from torchmetrics.classification import Accuracy
-from pytorch.custom_dataset import SUPERVisionDataset
-from pytorch.custom_batch_sampler import SimpleBatchSampler
+from pytorch.datasets.custom_dataset import SUPERVisionDataset
+from pytorch.samplers import SimpleBatchSampler
 import torch.nn.functional as F
 
 # support running without installing as a package

@@ -4,7 +4,7 @@ import torchvision.models as models
 
 model_names = sorted(name for name in models.__dict__ if name.islower() and not name.startswith("__") and callable(models.__dict__[name]))
 
-def parse_args(default_config_file):
+def parse_args(config_file):
     """Parses command line and config file arguments."""
     parser = configargparse.ArgumentParser(
         description='Testing out serverless data loader on CPU or GPU',
@@ -12,7 +12,7 @@ def parse_args(default_config_file):
         config_arg_is_required=False,
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         formatter_class=configargparse.ArgumentDefaultsHelpFormatter,
-        default_config_files=[default_config_file])
+        default_config_files=[config_file])
 
     parser = add_input_args(parser)
     args = parser.parse_args()
@@ -143,17 +143,22 @@ def add_input_args(parser):
         "--data_profile",
         action="store_true",
     )
+    #parser.add(
+    #    "--full_epoch",
+    #    action="store_true",
+    #)
     parser.add(
-        "--full_epoch",
-        action="store_true",
-    )
-    parser.add(
-        "--num_minibatches",
+        "--max_minibatches_per_epoch",
         type=int,
-        default=50,
+        default=None,
     )
     parser.add(
         "--no_eval",
+        action="store_true",
+    )
+
+    parser.add(
+        "--use_super",
         action="store_true",
     )
     return parser
