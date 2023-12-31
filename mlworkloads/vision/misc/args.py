@@ -153,7 +153,7 @@ def add_input_args(parser):
         default=None,
     )
     parser.add(
-        "--no_eval",
+        "--train_only",
         action="store_true",
     )
 

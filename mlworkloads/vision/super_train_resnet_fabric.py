@@ -10,7 +10,7 @@ from lightning.fabric.strategies import FSDPStrategy
 from torch.utils.data import DataLoader
 from misc.args import parse_args
 from misc.utils import get_default_supported_precision, num_parameters, AverageMeter, ProgressMeter
-from misc.ml_training_logger import MLTrainingLogger
+from misc.ml_training_logger import MLTrainingLogger, create_job_report
 from pytorch.datasets.super_dataset import SUPERVDataset
 from pytorch.samplers.super_sampler import SUPERSampler
 import torch.nn.functional as F
@@ -40,6 +40,7 @@ def setup(config_file:str, devices: int, precision: Optional[str], resume: Union
     # Create the Lightning Fabric object. The parameters like accelerator, strategy, devices etc. will be proided
     # by the command line. See all options: `lightning run model --help`
     logger = CSVLogger(save_dir=hparams.log_dir, name=hparams.dataset_name, flush_logs_every_n_steps=hparams.log_interval)
+
     fabric = L.Fabric(accelerator="gpu",devices=devices, strategy=strategy, precision=precision, loggers=[logger])
     fabric.print(hparams)
     #fabric.launch(main, resume=resume, hparams=hparams)
@@ -91,13 +92,15 @@ def main(fabric: L.Fabric, resume: Union[bool, Path],hparams:Namespace) -> None:
     state = {"model": model, "optimizer": optimizer, "scheduler": scheduler, "hparams": hparams, "iter_num": 0, "step_count": 0}
 
     # Initialize validation DataLoader if needed and call the run_training function
-    if not hparams.no_eval:
+    if not hparams.train_only:
         val_dataloader = initialize_dataloader(hparams, transformations, 'val', cache_coordinator_client if hparams.use_super else None)
         train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, val_dataloader)
     else:
         train_dataloader = fabric.setup_dataloaders(train_dataloader)
 
-    run_training(fabric, state, train_dataloader, val_dataloader if not hparams.no_eval else None, hparams)
+    run_training(fabric, state, train_dataloader, val_dataloader if not hparams.train_only else None, hparams)
+
+    create_job_report(job_id =hparams.job_id,log_out_folder=fabric.loggers[0].log_dir)
 
 
 def initialize_model(fabric: L.Fabric, arch: str) -> torch.nn.Module: 
@@ -135,16 +138,16 @@ def initialize_dataloader(hparams:Namespace, transformations:transforms.Compose,
 
 def run_training(fabric: L.Fabric, state: dict, train_dataloader: DataLoader, val_dataloader: DataLoader, hparams:Namespace) -> None:
     
-    logger = MLTrainingLogger(fabric_logger=fabric.loggers[0], log_interval=hparams.log_interval)
+    train_logger = MLTrainingLogger(fabric_logger=fabric.loggers[0], log_interval=hparams.log_interval, prefix='train')
+    val_logger = MLTrainingLogger(fabric_logger=fabric.loggers[0], log_interval=hparams.log_interval,prefix='val')
 
     best_prec1 = 0
     best_prec5 = 0
     best_loss = float('inf')  # Initialize with positive infinity
 
     for epoch in range(0, hparams.max_epochs):
-
         try:
-            train_avg_loss,train_avg_top1,train_avg_top5 = train(fabric, state, train_dataloader, epoch, logger)
+            train_avg_loss,train_avg_top1,train_avg_top5 = train(fabric, state, train_dataloader, epoch, train_logger)
             state["scheduler"].step()
         except Exception as e:
             fabric.print("Error in training routine!")
@@ -152,10 +155,9 @@ def run_training(fabric: L.Fabric, state: dict, train_dataloader: DataLoader, va
             fabric.print(e.__class__.__name__)
             break
         
-        if not hparams.no_eval:
+        if not hparams.train_only:
             try:
-                val_avg_loss, val_avg_top1, val_avg_top5 = validate(fabric, state, val_dataloader,
-                                                                epoch, logger)
+                val_avg_loss, val_avg_top1, val_avg_top5 = validate(fabric, state, val_dataloader, epoch, val_logger)
                 best_prec1 = max(best_prec1, val_avg_top1)
                 best_prec5 = max(best_prec5, val_avg_top5)
                 best_loss = min(best_loss, val_avg_loss)
@@ -185,9 +187,10 @@ def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int
     # switch to train mode
     fabric.print("training ...")
     model.train()
+    
+    total_batches = min(hparams.max_minibatches_per_epoch, len(train_dataloader)) if hparams.max_minibatches_per_epoch else len(train_dataloader)
 
     end = time.perf_counter()
-    total_batches = len(train_dataloader)
 
     for batch_idx, (input, target) in enumerate(train_dataloader):
         #no need to call `.to(device)` on the data, target
@@ -253,7 +256,7 @@ def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int
 
 
 
-def validate(fabric: L.Fabric, state: dict, val_dataloader: DataLoader, logger:MLTrainingLogger, epoch: int) -> None:
+def validate(fabric: L.Fabric, state: dict, val_dataloader: DataLoader, epoch: int, logger:MLTrainingLogger,) -> None:
     
     model:torch.nn.Module = state["model"]
     hparams = state["hparams"]
@@ -264,8 +267,9 @@ def validate(fabric: L.Fabric, state: dict, val_dataloader: DataLoader, logger:M
     # switch to evaluate mode
     fabric.print("Validating ...")
     model.eval()
+    total_batches = min(hparams.max_minibatches_per_epoch, len(val_dataloader)) if hparams.max_minibatches_per_epoch else len(val_dataloader)
 
-    end = time.time()
+    end = time.perf_counter()
 
     for batch_idx, (input, target) in enumerate(val_dataloader):
 
@@ -290,21 +294,33 @@ def validate(fabric: L.Fabric, state: dict, val_dataloader: DataLoader, logger:M
         batch_compute_time = time.perf_counter() - compute_start
         total_batch_time = time.perf_counter() - end
 
+
+        if hparams.max_minibatches_per_epoch and batch_idx >= hparams.max_minibatches_per_epoch-1:
+            #end epoch early based on num_minibacthes that have been processed 
+            break
+
         if batch_idx == len(val_dataloader) - 1:
             break
+
+        logger.record_train_batch_metrics(
+            epoch=epoch, batch_idx=batch_idx, num_samples=input.size(0),
+            total_batch_time=total_batch_time, batch_load_time=batch_load_time,
+            batch_compute_time=batch_compute_time, loss=to_python_float(loss.data),
+            top1=to_python_float(prec1), top5=to_python_float(prec5),
+            total_batches=total_batches, epoch_end=False, job_end=False)
  
-        logger.record_train_batch_metrics(batch_idx=batch_idx,num_samples=input.size(0),total_batch_time=total_batch_time, 
-                                 batch_load_time=batch_load_time,batch_compute_time=batch_compute_time,
-                                 loss=to_python_float(loss.data),top1=to_python_float(prec1), top5=to_python_float(prec5),
-                                 epoch_end=False, job_end=False)
         end = time.perf_counter()
 
+        
+    # Record metrics for the last batch and end of the epoch (and possibly job)
+    logger.record_train_batch_metrics(
+        epoch=epoch, batch_idx=batch_idx, num_samples=input.size(0),
+        total_batch_time=total_batch_time, batch_load_time=batch_load_time,
+        batch_compute_time=batch_compute_time, loss=to_python_float(loss.data),
+        top1=to_python_float(prec1), top5=to_python_float(prec5),
+        total_batches=total_batches, epoch_end=True, job_end=epoch == hparams.max_epochs-1
+    )
     
-    
-    logger.record_train_batch_metrics(batch_idx=batch_idx,num_samples=input.size(0),total_batch_time=total_batch_time, 
-                             batch_load_time=batch_load_time,batch_compute_time=batch_compute_time,
-                             loss=to_python_float(loss.data),top1=to_python_float(prec1), top5=to_python_float(prec5),
-                             epoch_end=True, job_end=epoch==hparams.max_epochs)
     return losses.avg,top1.avg, top5.avg
 
 def accuracy(output: torch.Tensor, target:torch.Tensor, topk=(1,))-> List[torch.Tensor]:

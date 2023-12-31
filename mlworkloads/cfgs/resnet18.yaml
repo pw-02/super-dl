@@ -1,11 +1,11 @@
 gprc_server_address: localhost:50051
 task: train
-num_workers: 0
+num_workers: 4
 lr: 1e-4
 arch: resnet18
 weight_decay: 1e-4
 momentum: 0.9
-batch_size: 128
+batch_size: 256
 max_epochs: 2
 dataset_name: cifar10
 save_dir: mlworkloads/vision/out/cifar10
@@ -18,9 +18,8 @@ source_system: "local"
 cache_host: "localhost"
 dry_run: False
 data_profile: False
-max_minibatches_per_epoch: 8
-#full_epoch: False
-no_eval: True
+#max_minibatches_per_epoch: 8
+train_only: True
 use_super: False
 #gpus: 0
 #deterministic: True
