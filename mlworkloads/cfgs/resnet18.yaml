@@ -6,7 +6,7 @@ arch: resnet18
 weight_decay: 1e-4
 momentum: 0.9
 batch_size: 128
-max_epochs: 1
+max_epochs: 2
 dataset_name: cifar10
 save_dir: mlworkloads/vision/out/cifar10
 data_dir: mlworkloads/vision/data/cifar-10
@@ -18,7 +18,7 @@ source_system: "local"
 cache_host: "localhost"
 dry_run: False
 data_profile: False
-max_minibatches_per_epoch: 2
+max_minibatches_per_epoch: 8
 #full_epoch: False
 no_eval: True
 use_super: False

@@ -163,6 +163,7 @@ class MLTrainingLogger:
             print_seperator_line()
             print(f"EPOCH [{epoch}] SUMMARY:")
             epoch_info = {
+                "TotalBatches": self.epoch_batch_times.count,
                 "TotalTime": round(self.epoch_batch_times.sum, decimal_places),
                 "DataLoadTime": round(self.epoch_batch_load_times.sum, decimal_places),
                 "ComputeTime": round(self.epoch_batch_compute_times.sum, decimal_places),
