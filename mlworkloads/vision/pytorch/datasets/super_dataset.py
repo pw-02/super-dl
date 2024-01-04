@@ -15,6 +15,7 @@ import io
 from PIL import Image
 from pathlib import Path
 import functools
+from lightning.fabric import Fabric
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -45,18 +46,19 @@ class S3Url(object):
 
 
 class SUPERVDataset(Dataset):
-    def __init__(self, source_system:str, cache_host:str, data_dir:str,transform:Optional[Callable] =None, lambda_function_name=None, prefix='train'):
+    def __init__(self, fabric: Fabric, source_system:str, cache_host:str, data_dir:str,transform:Optional[Callable] =None, lambda_function_name=None, prefix='train'):
 
+        self.fabric = fabric
         self.prefix = prefix
         self.lambda_function_name = lambda_function_name
         # Initialize Redis client and S3 client
         if cache_host is not None:
             self.cache_host = redis.StrictRedis(host=cache_host, port=REDIS_PORT, db=0)  
-            logger.info(f"Established connection with cache. Host: {cache_host}, Port: {REDIS_PORT}")
+            fabric.print(f"Established connection with cache. Host: {cache_host}, Port: {REDIS_PORT}")
     
         else:
             self.cache_host = None
-            logger.info(f"Not using cache")
+            fabric.print(f"Not using cache")
 
         self.s3_client = boto3.client('s3')
         self.source_system = source_system
@@ -68,7 +70,7 @@ class SUPERVDataset(Dataset):
         else:
             self._blob_classes = self._classify_blobs_local(data_dir)
         
-        logger.info("Finished loading {} index. Total files:{}, Total classes:{}".format(self.prefix,len(self),len(self._blob_classes)))
+        fabric.print("Finished loading {} index. Total files:{}, Total classes:{}".format(self.prefix,len(self),len(self._blob_classes)))
 
     
     def __len__(self):
@@ -96,7 +98,7 @@ class SUPERVDataset(Dataset):
 
             total_load_time = time.perf_counter() - start_time
             print(f"Cache hit for Batch ID={batch_id}, Total Load Time={total_load_time}, Cache Load Time={cache_load_time}, Decode Time={decode_time}")
-            return torch_imgs, torch_lables
+            return torch_imgs, torch_lables, batch_id
                 
         # Cache miss, choose between fetching from S3 or invoking Lambda function
         if self.source_system == 's3':
@@ -106,7 +108,7 @@ class SUPERVDataset(Dataset):
             images,labels = self.load_from_disk(batch_indices, batch_id)
 
         # Convert the list of images and labels to tensors
-        return torch.stack(images),  torch.tensor(labels)
+        return torch.stack(images),  torch.tensor(labels), batch_id
     
     def deserialize_torch_bacth(self,batch_data):
         batch_data = base64.b64decode(batch_data)

@@ -333,14 +333,23 @@ class AverageMeter(object):
         self.name = name
         self.fmt = fmt
         self.reset()
+        self.min = float('inf')
+        self.max = 0
 
     def reset(self):
         self.val = 0
         self.avg = 0  # noqa
         self.sum = 0
         self.count = 0
+        self.min = float('inf')
+        self.max = 0
+
 
     def update(self, val, n=1):
+
+        self.min = min(self.min, val)
+        self.max = max(self.max, val)
+
         self.val = val
         self.sum += val * n
 
@@ -348,7 +357,8 @@ class AverageMeter(object):
         self.avg = self.sum / self.count  # noqa
 
     def __str__(self):
-        fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
+        #fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
+        fmtstr = "{name}:{val" + self.fmt +"}"
         return fmtstr.format(**self.__dict__)
 
 class ProgressMeter(object):
