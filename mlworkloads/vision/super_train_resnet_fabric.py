@@ -41,9 +41,9 @@ def setup(config_file:str, devices: int, precision: Optional[str], resume: Union
     # by the command line. See all options: `lightning run model --help`
     logger = CSVLogger(save_dir=hparams.log_dir, name=hparams.dataset_name, flush_logs_every_n_steps=hparams.log_interval)
 
-    fabric = L.Fabric(accelerator="gpu",devices=devices, strategy=strategy, precision=precision, loggers=[logger])
+    fabric = L.Fabric(accelerator=hparams.accelerator,devices=hparams.devices, strategy=strategy, precision=precision, loggers=[logger])
     fabric.print(hparams)
-    #fabric.launch(main, resume=resume, hparams=hparams)
+    fabric.launch(main, resume=resume, hparams=hparams)
     main(fabric,resume=resume, hparams=hparams)
 
 
@@ -201,23 +201,30 @@ def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int
         
         compute_start = time.perf_counter()
         
-        # Forward pass
-        output = model(input)
+        if hparams.accelerator == 'gpu':
+            # Forward pass
+            output = model(input)
 
-        # loss calculation
-        loss = F.cross_entropy(output, target)
+            # loss calculation
+            loss = F.cross_entropy(output, target)
         
-        #Backward pass
-        optimizer.zero_grad() # Zero the gradients
-        fabric.backward(loss)  # instead of loss.backward()  #Computes gradients
-        optimizer.step()  # Update model parameters
+            #Backward pass
+            optimizer.zero_grad() # Zero the gradients
+            fabric.backward(loss)  # instead of loss.backward()  #Computes gradients
+            optimizer.step()  # Update model parameters
         
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-        losses.update(to_python_float(loss.data), input.size(0))
-        top1.update(to_python_float(prec1), input.size(0))
-        top5.update(to_python_float(prec5), input.size(0))
-        
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+            losses.update(to_python_float(loss.data), input.size(0))
+            top1.update(to_python_float(prec1), input.size(0))
+            top5.update(to_python_float(prec5), input.size(0))
+        else:
+           #simulate training for now
+           time.sleep(0.2)
+           losses.update(0.0)
+           top1.update(0.0)
+           top5.update(0.0)
+
         if hparams.data_profile:
             torch.cuda.synchronize()
 
@@ -235,8 +242,8 @@ def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int
         logger.record_train_batch_metrics(
         epoch=epoch, batch_idx=batch_idx, num_samples=input.size(0),
         total_batch_time=total_batch_time, batch_load_time=batch_load_time,
-        batch_compute_time=batch_compute_time, loss=to_python_float(loss.data),
-        top1=to_python_float(prec1), top5=to_python_float(prec5),
+        batch_compute_time=batch_compute_time, loss=losses.val,
+        top1=top1.val, top5=top5.val,
         total_batches=total_batches, epoch_end=False, job_end=False
         )
         
@@ -247,8 +254,8 @@ def train(fabric: L.Fabric, state: dict, train_dataloader: DataLoader,epoch: int
     logger.record_train_batch_metrics(
         epoch=epoch, batch_idx=batch_idx, num_samples=input.size(0),
         total_batch_time=total_batch_time, batch_load_time=batch_load_time,
-        batch_compute_time=batch_compute_time, loss=to_python_float(loss.data),
-        top1=to_python_float(prec1), top5=to_python_float(prec5),
+        batch_compute_time=batch_compute_time, loss=losses.val,
+        top1=top1.val, top5=top5.val,
         total_batches=total_batches, epoch_end=True, job_end=epoch == hparams.max_epochs-1
     )
     return losses.avg,top1.avg,top5.avg

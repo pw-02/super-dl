@@ -161,4 +161,18 @@ def add_input_args(parser):
         "--use_super",
         action="store_true",
     )
+    parser.add(
+        "--accelerator",
+        default="gpu",
+    )
+    
+    parser.add(
+        "--exp_name",
+        default="exp",
+    )
+    parser.add(
+        "--devices",
+        type=int,
+        default=1,
+    )
     return parser

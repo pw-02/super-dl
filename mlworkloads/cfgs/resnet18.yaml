@@ -1,3 +1,5 @@
+accelerator: 'cpu'
+devices: 2
 gprc_server_address: localhost:50051
 task: train
 num_workers: 4
@@ -11,6 +13,7 @@ dataset_name: cifar10
 save_dir: mlworkloads/vision/out/cifar10
 data_dir: mlworkloads/vision/data/cifar-10
 log_dir: mlworkloads/vision/logs
+exp_name: cifar10
 log_interval: 1
 always_save_checkpoint: False
 source_system: "local"
@@ -18,8 +21,8 @@ source_system: "local"
 cache_host: "localhost"
 dry_run: False
 data_profile: False
-#max_minibatches_per_epoch: 8
-train_only: True
+max_minibatches_per_epoch: 8
+train_only: False
 use_super: False
 #gpus: 0
-#deterministic: True
+#deterministic: True4
