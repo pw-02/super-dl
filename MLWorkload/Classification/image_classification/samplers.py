@@ -1,8 +1,14 @@
 import torch
 from typing import Iterator, Optional, List, TypeVar, Sized, Union, Iterable
 from torch.utils.data import Sampler
+import sys
+
+sys.path.append('/workspaces/super-dl')
+# Specify the path to your module
+#print(sys.path)
 
 from super_dl.cache_coordinator_client import CacheCoordinatorClient
+
 
 T = TypeVar('T')
 
@@ -106,13 +112,13 @@ class SuperBatchSampler():
   
 
 class SUPERSampler(SuperBatchSampler):
-    def __init__(self, data_source: Sized, job_id: int, grpc_client: CacheCoordinatorClient = None, shuffle: bool = True, seed: int = 0, 
+    def __init__(self, dataset: Sized, job_id: int, super_client: CacheCoordinatorClient = None, shuffle: bool = True, seed: int = 0, 
                  batch_size:int = 16, drop_last: bool = False, prefetch_look_ahead = 10):
         
-        base_sampler = SuperBaseSampler(data_source=data_source, shuffle=shuffle, seed=seed)
+        base_sampler = SuperBaseSampler(data_source=dataset, shuffle=shuffle, seed=seed)
 
         super(SUPERSampler, self).__init__(base_sampler, batch_size, drop_last)
-        self.grpc_client = grpc_client
+        self.super_client = super_client
         self.prefetch_look_ahead = prefetch_look_ahead
         self.job_id = job_id
         
@@ -120,8 +126,8 @@ class SUPERSampler(SuperBatchSampler):
         """
         Share future batch accesses with the CacheCoordinatorClient.
         """
-        if batches and self.grpc_client is not None:
-            self.grpc_client.send_batch_access_pattern(job_id=self.job_id, batches=batches)
+        if batches and self.super_client is not None:
+            self.super_client.send_batch_access_pattern(job_id=self.job_id, batches=batches)
 
 
     def __iter__(self) -> Iterator[List[int]]:
@@ -163,7 +169,7 @@ def test_sampler(dataset, job_id, use_super = False, num_Epochs=1, batch_size=10
         cache_coordinator_client = CacheCoordinatorClient()
         cache_coordinator_client.register_job(job_id,data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
 
-    super_grpc_batch_sampler = SUPERSampler(data_source=dataset, job_id= job_id, grpc_client=cache_coordinator_client,
+    super_grpc_batch_sampler = SUPERSampler(data_source=dataset, job_id= job_id, super_client=cache_coordinator_client,
                                             shuffle=False,
                                             seed=0,
                                             batch_size=batch_size,

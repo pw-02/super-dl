@@ -259,7 +259,6 @@ class MLTrainingLogger:
                 "AvgAcc@5": round(self.epoch_batch_top5_acc.avg, decimal_places)
 
             }
-
             print(", ".join(f"{key}: {value}" for key, value in epoch_info.items()))
             print_seperator_line()
         

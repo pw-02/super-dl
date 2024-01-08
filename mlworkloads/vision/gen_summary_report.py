@@ -10,7 +10,7 @@ def create_job_report(job_id, folder_path):
     csv_files = glob.glob(os.path.join(folder_path, '*.csv'))
 
     # Specify column categories
-    categories = ['train/batch', 'train/epoch', 'train/job', 'val/batch', 'val/epoch', 'val/job']
+    categories = ['train.iteration', 'train.epoch', 'train.job', 'val.iteration', 'val.epoch', 'val.job']
 
     # Create a dictionary to store accumulated data for each category
     category_data = {category: {} for category in categories}
@@ -66,4 +66,4 @@ def create_job_report(job_id, folder_path):
                 pd.DataFrame.from_dict(sorted_data_dict, orient='columns').to_excel(writer, sheet_name=clean_category, index=False)
 
 if __name__ == "__main__":
-    create_job_report(1, 'mlworkloads/vision/logs/cifar10/version_3')
+    create_job_report(1, '/workspaces/super-dl/MLWorkload/Classification/logs/cifar10/version_1')

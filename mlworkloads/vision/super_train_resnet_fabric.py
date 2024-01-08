@@ -299,7 +299,6 @@ def process_data(fabric: Fabric, state: dict, dataloader: DataLoader, model:torc
                             "top1": top1.val,
                             "top5": top5.val,#
                             "rank": fabric.local_rank
-
                             }
                             , step=batch_idx, metric_level='batch')
         
