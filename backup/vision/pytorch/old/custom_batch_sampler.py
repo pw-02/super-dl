@@ -86,7 +86,7 @@ if __name__ == "__main__":
 class SUPERBatchSampler(Sampler):
 
     def __init__(self, dataset_size, batch_size, grpc_server_address='localhost:50051', send_interval=60, batch_count_threshold=500, seed=42):
-        from super_dl import cache_management_pb2, cache_management_pb2_grpc
+        from SuperDL import cache_management_pb2, cache_management_pb2_grpc
         self.dataset_size = dataset_size
         self.batch_size = batch_size
         self.grpc_server_address = grpc_server_address
@@ -148,7 +148,7 @@ class SUPERBatchSampler(Sampler):
         return batch_indices, batch_id
 
     def _send_batches_to_grpc(self, batches):
-        from super_dl import cache_management_pb2, cache_management_pb2_grpc
+        from SuperDL import cache_management_pb2, cache_management_pb2_grpc
 
         # Prepare the gRPC request
         request = cache_management_pb2.BatchIds(ids=batches)

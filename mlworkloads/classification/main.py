@@ -2,7 +2,7 @@ import time
 from lightning.fabric import Fabric
 from typing import Any, Optional, Tuple, Union, Iterator
 from pathlib import Path
-from argparse import Namespace
+from jsonargparse._namespace import Namespace
 from torchvision import models, transforms
 from torch import nn
 from image_classification.utils import *
@@ -11,7 +11,7 @@ from image_classification.samplers import *
 from torch import optim
 from torch.utils.data import DataLoader
 from image_classification.training import *
-from super_dl.cache_coordinator_client import CacheCoordinatorClient
+from SuperDL.cache_coordinator_client import CacheCoordinatorClient
 
 def main(fabric: Fabric,hparams:Namespace) -> None:
     exp_start_time = time.time()
@@ -19,6 +19,8 @@ def main(fabric: Fabric,hparams:Namespace) -> None:
     # Prepare for training
     model, optimizer, scheduler, train_dataloader, val_dataloader, logger = prepare_for_training(
         fabric=fabric,hparams=hparams)
+        
+    logger.log_hyperparams(hparams)
 
     # Run training
     run_training(
@@ -34,8 +36,7 @@ def main(fabric: Fabric,hparams:Namespace) -> None:
 
     exp_duration = time.time() - exp_start_time
 
-    if fabric.rank_zero_first(True):
-        logger.create_job_report()
+    create_job_report(hparams.workload.exp_name,logger.log_dir)
 
     fabric.print(f"Experiment ended. Duration: {exp_duration}")
 
@@ -71,12 +72,11 @@ def prepare_for_training(fabric: Fabric,hparams:Namespace):
         val_dataloader = fabric.setup_dataloaders(val_dataloader)
 
     #Initialize logger
-    logger = SUPERLogger(root_dir=hparams.workload.log_dir,
-                          rank=fabric.local_rank, 
+    logger = SUPERLogger( fabric=fabric, root_dir=hparams.workload.log_dir,
                           flush_logs_every_n_steps=hparams.workload.flush_logs_every_n_steps,
                           print_freq= hparams.workload.print_freq,
                           exp_name=hparams.workload.exp_name)
-    logger.log_hyperparams(hparams)
+   
     
     return model, optimizer, scheduler, train_dataloader, val_dataloader, logger
 

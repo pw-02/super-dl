@@ -5,10 +5,9 @@ import sys
 
 sys.path.append('/workspaces/super-dl')
 # Specify the path to your module
-#print(sys.path)
+print(sys.path)
 
-from super_dl.cache_coordinator_client import CacheCoordinatorClient
-
+from SuperDL.cache_coordinator_client import CacheCoordinatorClient
 
 T = TypeVar('T')
 

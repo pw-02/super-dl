@@ -19,7 +19,7 @@ from torchvision import models, transforms
 from argparse import Namespace
 from typing import List
 # Import CacheCoordinatorClient
-from super_dl.cache_coordinator_client import CacheCoordinatorClient
+from SuperDL.cache_coordinator_client import CacheCoordinatorClient
 
 def to_python_float(t:torch.Tensor)-> float:
     if hasattr(t, 'item'):

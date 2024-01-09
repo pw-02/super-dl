@@ -20,11 +20,12 @@ def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimize
         if hparams.workload.run_evaluate:
             
             fabric.print("validating..")
+           
             total_batches = min(hparams.workload.max_minibatches_per_epoch, len(val_dataloader)) if hparams.workload.max_minibatches_per_epoch else len(val_dataloader)
 
             process_data(fabric=fabric,
                          dataloader=val_dataloader,
-                         step=epoch * total_batches,
+                         global_step=epoch * total_batches,
                          model=model,
                          optimizer=optimizer,
                          logger=logger,
@@ -39,7 +40,7 @@ def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimize
 
             process_data(fabric=fabric,
                          dataloader=train_dataloader,
-                         step=epoch * total_batches,
+                         global_step=epoch * total_batches,
                          model=model,
                          optimizer=optimizer,
                          logger=logger,
@@ -53,17 +54,16 @@ def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimize
 
 
 def process_data(fabric: Fabric, dataloader: DataLoader, 
-                 step:int, model:torch.nn.Module, 
+                 global_step:int, model:torch.nn.Module, 
                  optimizer:torch.optim.SGD, logger:SUPERLogger, epoch, hparams:Namespace,
                  total_batches:int, is_training=True): 
     
-    total_batches = min(hparams.workload.max_minibatches_per_epoch, len(dataloader)) if hparams.workload.max_minibatches_per_epoch else len(dataloader)
-    logger.epoch_start(total_batches)
+    logger.epoch_start(epoch_length=total_batches,is_training=is_training)
     model.train(is_training)
     end = time.perf_counter()
 
     for iteration, (input, target, batch_id) in enumerate(dataloader):
-        batch_size = input.size(0)
+        num_sampels = input.size(0)
         data_time = time.perf_counter() - end
         
         # Accumulate gradient x batches at a time
@@ -87,28 +87,28 @@ def process_data(fabric: Fabric, dataloader: DataLoader,
             torch.cuda.synchronize()    
           
         iteration_time = time.perf_counter()-end
-
+        compute_time = iteration_time - data_time
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
   
-        logger.log_iteration_metrics(
+        logger.record_iteration_metrics(
             epoch=epoch,
-            batch_size=batch_size,
-            step=step,
+            step=iteration,
+            global_step = global_step,
+            num_sampels=num_sampels,
             iteration_time=iteration_time,
             data_time=data_time,
-            compute_time=iteration_time - data_time,
-            compute_ips=  calc_images_per_second(num_images=batch_size,time=iteration_time - data_time),
-            total_ips=calc_images_per_second(num_images=batch_size,time=iteration_time),
+            compute_time=compute_time,
+            compute_ips=  calc_throughput_per_second(num_sampels,compute_time),
+            total_ips=calc_throughput_per_second(num_sampels,iteration_time),
             loss = to_python_float(loss.detach()),
             top1=to_python_float(prec1),
             top5=to_python_float(prec5),
             batch_id=batch_id,
             is_training=is_training,
-            iteration = iteration
 
         )
-        step=step+1
+        global_step+=1
 
         #if (iteration + 1) % hparams.log_interval == 0:
         #    progress.display(iteration)

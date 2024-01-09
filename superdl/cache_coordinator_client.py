@@ -1,6 +1,6 @@
 import grpc
-from super_dl.protos import cache_coordinator_pb2 as cache_coordinator_pb2
-from super_dl.protos import cache_coordinator_pb2_grpc as cache_coordinator_pb2_grpc
+from SuperDL.protos import cache_coordinator_pb2 as cache_coordinator_pb2
+from SuperDL.protos import cache_coordinator_pb2_grpc as cache_coordinator_pb2_grpc
 
 class CacheCoordinatorClient:
     def __init__(self, server_address='localhost:50051'):

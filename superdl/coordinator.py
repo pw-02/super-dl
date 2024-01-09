@@ -6,8 +6,8 @@ import threading
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 #from sklearn.linear_model import LinearRegression
-from super_dl.batch import Batch
-from super_dl.unique_priority_queue import UniquePriorityQueue
+from SuperDL.batch import Batch
+from SuperDL.unique_priority_queue import UniquePriorityQueue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict
 

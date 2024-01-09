@@ -2,7 +2,7 @@ import torch
 from typing import Iterator, Optional, List, TypeVar, Sized, Union, Iterable
 from torch.utils.data import Sampler
 
-from super_dl.cache_coordinator_client import CacheCoordinatorClient
+from SuperDL.cache_coordinator_client import CacheCoordinatorClient
 
 T = TypeVar('T')
 

@@ -17,7 +17,7 @@ from torchvision import models, transforms
 from argparse import Namespace
 from typing import List
 # Import CacheCoordinatorClient
-from super_dl.cache_coordinator_client import CacheCoordinatorClient
+from SuperDL.cache_coordinator_client import CacheCoordinatorClient
 from lightning.fabric import Fabric, seed_everything
 from datetime import datetime
 

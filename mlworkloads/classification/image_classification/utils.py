@@ -7,6 +7,9 @@ import os
 import torch.distributed
 import torch.distributed as dist
 from lightning.fabric import Fabric
+from collections import OrderedDict
+import yaml
+from lightning.fabric.utilities.rank_zero import rank_zero_only
 
 class AverageMeter(object):
     """Computes and stores the average and current value."""
@@ -179,31 +182,21 @@ def reduce_tensor(tensor:torch.Tensor, fabric:Fabric):
     rt /= fabric.world_size()
     return rt
 
-def calc_images_per_second(num_images, time):
+def calc_throughput_per_second(num_sampels, time):
     #world_size = fabric.world_size() 
     world_size = 1
-    tbs = world_size * num_images
+    tbs = world_size * num_sampels
     return tbs / time
 
-def calc_batches_per_second(num_batches, time):
-    #world_size = fabric.world_size() 
-    world_size = 1
-    tbs = world_size * num_batches
-    return tbs / time
-
-def calc_epochs_per_second(num_epochs, time):
-    #world_size = fabric.world_size() 
-    world_size = 1
-    tbs = world_size * num_epochs
-    return tbs / time
 
 import glob
 import pandas as pd
 import os
 
+#@rank_zero_only
 def create_job_report(job_id, folder_path):
-    # Check if a file called 'summary_report.xlsx' exists in the folder
-    output_file_path = os.path.join(folder_path, 'summary_report.xlsx')
+
+    output_file_path = os.path.join(folder_path, f'job_{job_id}_summary_report.xlsx')
 
     # Get a list of all CSV files in the specified folder
     csv_files = glob.glob(os.path.join(folder_path, '*.csv'))
@@ -212,7 +205,7 @@ def create_job_report(job_id, folder_path):
     categories = ['train.iteration', 'train.epoch', 'train.job', 'val.iteration', 'val.epoch', 'val.job']
 
     # Create a dictionary to store accumulated data for each category
-    category_data = {category: {} for category in categories}
+    category_data = {}
 
     # Iterate through each CSV file
     for csv_file in csv_files:
@@ -226,43 +219,102 @@ def create_job_report(job_id, folder_path):
 
             # Update the dictionary for the current category with the selected columns
             if selected_columns:
-
                 data_dict = df[selected_columns].to_dict(orient='list')
-
                 # Remove NaN values from the dictionary
                 data_dict_no_nan = {key: [value for value in values if pd.notna(value)] for key, values in data_dict.items()}
+                
+                if len(data_dict_no_nan) >  0:
+                     # Accumulate data for the current category across all CSV files
+                    if category in category_data:
+                        for key, values in data_dict_no_nan.items():
+                            category_data[category][key].extend(values)
+                    else:
+                        category_data[category] = data_dict_no_nan
 
-                # Accumulate data for the current category across all CSV files
-                if category_data[category]:
-                    for key, values in data_dict_no_nan.items():
-                        category_data[category][key].extend(values)
-                else:
-                    category_data[category] = data_dict_no_nan
+    # Read 'hparams.yaml' file
+    hparams_file_path = os.path.join(folder_path, 'hparams.yaml')
+    hparams_data = {}
+    if os.path.isfile(hparams_file_path):
+        with open(hparams_file_path, 'r') as hparams_file:
+            hparams_data = yaml.safe_load(hparams_file)
+
+    category_data["overall_summary"] = summarize_across_all_devices(category_data=category_data)
+
+
 
     # Create an Excel writer for the output file
-    with pd.ExcelWriter(output_file_path, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output_file_path, engine='xlsxwriter') as writer: 
+        df_hparams = pd.DataFrame.from_dict(hparams_data, orient='index')
+        df_hparams.to_excel(writer, sheet_name='hparams', header=False, index=True)
+
         # Iterate through each category
-        for category, data_dict in category_data.items():
+        for category, data_dict in  reversed(category_data.items()):
             # Skip creating sheets if the data for the current category is empty
             if data_dict:
                 # Replace invalid characters in the sheet name
-                clean_category = category.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace(':', '').replace('[', '').replace(']', '')
+                df = pd.DataFrame.from_dict(data_dict, orient='columns')
+                for col in ['train.iteration.batch_id', 'val.iteration.batch_id']:
+                    if col in df.columns:
+                        df[col] = df[col].apply(lambda x: '{:.0f}'.format(x))
+                
+                df.to_excel(writer, sheet_name=category, index=False)
 
-                # Convert the dictionary to a DataFrame
-                df_sorted = pd.DataFrame.from_dict(data_dict, orient='columns')
+def summarize_across_all_devices(category_data):
+    summary = OrderedDict({
+        "dataset_type": [],
+        "num_devices": [],
+        "total_time": [],
+        "data_load_time": [],
+        "compute_time": [],      
+        "samples_processed": [],
+        "samples/sec": [],
+        "batches_processed": [],
+        "batches/sec": [],
+        "epochs_processed": [],
+        "epochs/sec": [],
+        "loss": [],
+        "acc(top1)": [],
+        "acc(top5)": []
+    })
 
-                # Sort the DataFrame by the 'timestamp' column
-                timestamp_column = next((col for col in data_dict.keys() if 'timestamp' in col.lower()), None)
-                if timestamp_column:
-                    df_sorted.sort_values(by=timestamp_column, inplace=True)
-                                # Change the data type of 'train/batch-id' column to string
-                if 'train/batch-id' in df_sorted.columns:
-                    df_sorted['train/batch-id'] = df_sorted['train/batch-id'].astype(str).apply(lambda x: "{:.0f}".format(float(x)) if pd.notna(x) else x)
-                # Convert the sorted DataFrame back to a dictionary
-                sorted_data_dict = df_sorted.to_dict(orient='list')
+    keys_to_check = ['train.job', 'val.job']
 
-                # Write the sorted and accumulated data for the current category to a separate sheet in the Excel file
-                pd.DataFrame.from_dict(sorted_data_dict, orient='columns').to_excel(writer, sheet_name=clean_category, index=False)
+    for key in keys_to_check:
+        if key in category_data:        
+            summary['dataset_type'].append('Train' if key == 'train.job' else 'Validation')
+            summary['num_devices'].append(len(category_data[key][f'{key}.device']))
+            summary['total_time'].append(calculate_average(category_data[key][f'{key}.total_time']))                
+            summary['data_load_time'].append(calculate_average(category_data[key][f'{key}.data_time']))
+            summary['compute_time'].append(calculate_average(category_data[key][f'{key}.compute_time']))
+            summary['samples_processed'].append(sum(category_data[key][f'{key}.num_samples']))
+            summary['samples/sec'].append(calculate_average(category_data[key][f'{key}.total_ips']))                
+            summary['batches_processed'].append(sum(category_data[key][f'{key}.num_batches']))
+            summary['batches/sec'].append(calculate_average(category_data[key][f'{key}.total_bps']))
+            summary['epochs_processed'].append(max(category_data[key][f'{key}.num_epochs']))
+            summary['epochs/sec'].append(calculate_average(category_data[key][f'{key}.total_eps']))                
+            summary['loss'].append(calculate_average(category_data[key][f'{key}.loss(avg)']))
+            summary['acc(top1)'].append(calculate_average(category_data[key][f'{key}.top1(avg)']))
+            summary['acc(top5)'].append(calculate_average(category_data[key][f'{key}.top5(avg)']))
+    
+    return summary
+
+def calculate_average(values):
+    """
+    Calculate the average of a list of values.
+
+    Parameters:
+    - values: List of numeric values.
+
+    Returns:
+    - Average of the values.
+    """
+    if not values:
+        raise ValueError("The input list is empty.")
+    
+    return sum(values) / len(values)
+
+
+
 
 if __name__ == "__main__":
-    create_job_report(1, '/workspaces/super-dl/MLWorkload/Classification/logs/cifar10/version_1')
+    create_job_report(1, '/workspaces/super-dl/MLWorkload/Classification/logs/cifar10/version_33')

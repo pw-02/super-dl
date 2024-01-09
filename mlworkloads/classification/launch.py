@@ -5,10 +5,10 @@ from lightning.fabric.strategies import FSDPStrategy
 from lightning.fabric import Fabric
 import torchvision.models as models
 import torch
-import sys
 from main import main
 
-
+from datetime import datetime
+import uuid
 
 MODEL_NAMES = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -66,7 +66,6 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     parser.add_argument('--super_dl.s3_lambda_name', type=str,  default=False)
     parser.add_argument('--super_dl.mode', default="local", choices=['local','s3'])
 
-
     parser.add_argument("--config", action=ActionConfigFile)  
     return parser
 
@@ -87,9 +86,10 @@ def get_default_supported_precision(training: bool) -> str:
 
 
 def setup(config_file: str, devices: int, precision: Optional[str]) -> None:
+
+    
     parser: ArgumentParser = initialize_parser(config_file)
     hparams = parser.parse_args(["--config", config_file])
-    hparams.job_id = os.getpid()
 
     precision = precision or get_default_supported_precision(training=True)
 
@@ -100,11 +100,7 @@ def setup(config_file: str, devices: int, precision: Optional[str]) -> None:
     if hparams.workload.max_minibatches_per_epoch:
         hparams.workload.max_minibatches_per_epoch //= fabric.world_size
 
-
-
-
-    
-    fabric.print(hparams)
+    #fabric.print(hparams)
     fabric.launch(main, hparams=hparams)
 
     

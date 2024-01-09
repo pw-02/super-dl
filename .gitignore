@@ -4,4 +4,5 @@ mlworkloads/nlp/data/
 mlworkloads/vision/data/
 mlworkloads/vision/out/
 mlworkloads/vision/logs/
-MLWorkload/Classification/logs/
+mlworkloads/classification/logs
+datasets/
