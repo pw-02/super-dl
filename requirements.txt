@@ -6,7 +6,7 @@ jsonargparse
 redis
 
 #export PYTHONPATH=/workspaces/super-dl
-
+/workspaces/super-dl/superdl
 #nlp workload
 #tiktoken
 #datasets

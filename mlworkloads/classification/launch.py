@@ -1,14 +1,11 @@
 from jsonargparse import CLI, ArgumentParser, ActionConfigFile
 from typing import Any, Optional, Tuple, Union
-import os
 from lightning.fabric.strategies import FSDPStrategy
 from lightning.fabric import Fabric
 import torchvision.models as models
 import torch
 from main import main
-
-from datetime import datetime
-import uuid
+import os
 
 MODEL_NAMES = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -99,7 +96,7 @@ def setup(config_file: str, devices: int, precision: Optional[str]) -> None:
     
     if hparams.workload.max_minibatches_per_epoch:
         hparams.workload.max_minibatches_per_epoch //= fabric.world_size
-
+    hparams.job_id = os.getpid()
     #fabric.print(hparams)
     fabric.launch(main, hparams=hparams)
 
@@ -111,7 +108,7 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     defaults = {
-        "config_file": 'MLWorkload/Classification/configs/train_resnet18.yaml',
+        "config_file": 'mlworkloads/classification/configs/train_resnet18.yaml',
         'devices': 1,
         'precision': None,
     }

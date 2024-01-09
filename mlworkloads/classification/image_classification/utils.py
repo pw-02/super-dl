@@ -115,12 +115,6 @@ class S3Url(object):
 
 
 
-def is_image_file(self, filename:str):
-
-    IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
-    any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
-
-
 
 def num_model_parameters(module: nn.Module, requires_grad: Optional[bool] = None) -> int:
     total = 0

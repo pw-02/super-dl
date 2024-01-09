@@ -1,7 +1,7 @@
 pytorch:
     workers: 0
     accelerator: 'cpu'
-    devices: 4
+    devices: 1
 
 workload:
     exp_name: cifar10
@@ -12,8 +12,8 @@ workload:
     run_training: True
     run_evaluate: True
     save_checkpoints: False
-    save_dir: mlworkloads/vision/out/cifar10
-    log_dir: MLWorkload/Classification/logs
+    save_dir: mlworkloads/classification/models
+    log_dir: mlworkloads/classification/reports
     seed: 1
     use_synthetic: False
     profile: True
@@ -38,7 +38,7 @@ super_dl:
 data:
     dataloader_backend: super
     dataset_name: cifar10
-    data_dir: mlworkloads/vision/data/cifar-10
+    data_dir: /workspaces/super-dl/datasets/vision/cifar-10
     batch_size: 256
     shuffle: True
     drop_last: False

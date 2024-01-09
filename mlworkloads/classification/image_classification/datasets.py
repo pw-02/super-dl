@@ -1,7 +1,7 @@
 from typing import Optional, List, Tuple, Callable, Dict
 from PIL import Image
 from torch.utils.data import Dataset
-from .utils import is_image_file, S3Url
+from .utils import S3Url
 import torch
 import functools
 import base64
@@ -24,7 +24,7 @@ class SUPERDatasetBase(Dataset):
         self.transform = transform
         self._img_classes = None
         self.super_client = super_client
-
+        self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
     @functools.cached_property
     def _classed_items(self) -> List[Tuple[str, int]]:
         return [
@@ -53,6 +53,9 @@ class SUPERDatasetBase(Dataset):
         images, labels = self.fetch_batch_data(batch_indices, batch_id)
 
         return torch.stack(images), torch.tensor(labels), batch_id
+    
+    def is_image_file(self, filename:str):
+        return any(filename.endswith(extension) for extension in self.img_extensions)
 
     def deserialize_torch_batch(self, batch_data):
         batch_data = base64.b64decode(batch_data)
@@ -94,8 +97,9 @@ class SUPERLocalDataset(SUPERDatasetBase):
             with open(index_file.absolute()) as f:
                 img_classes = json.load(f)
         else:
-            for dirpath, filenames in os.walk(data_dir):
-                for filename in filter(is_image_file, filenames):
+            for dirpath, dirnames, filenames in os.walk(data_dir):
+                for filename in filter(self.is_image_file, filenames):
+                    
                     img_class = os.path.basename(dirpath.removesuffix('/'))
                     img_path = os.path.join(dirpath, filename)
                     img_classes.setdefault(img_class, []).append(img_path)
@@ -105,6 +109,7 @@ class SUPERLocalDataset(SUPERDatasetBase):
                 outfile.write(json_object)
 
         return img_classes
+    
     
     def fetch_batch_data(self, batch_indices, batch_id):
         images = []

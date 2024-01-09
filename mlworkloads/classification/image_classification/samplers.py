@@ -3,11 +3,11 @@ from typing import Iterator, Optional, List, TypeVar, Sized, Union, Iterable
 from torch.utils.data import Sampler
 import sys
 
-sys.path.append('/workspaces/super-dl')
+#sys.path.append('/workspaces/super-dl/superdl')
 # Specify the path to your module
-print(sys.path)
+#print(sys.path)
 
-from SuperDL.cache_coordinator_client import CacheCoordinatorClient
+from superdl.cache_coordinator_client import CacheCoordinatorClient
 
 T = TypeVar('T')
 

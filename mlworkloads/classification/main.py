@@ -5,13 +5,13 @@ from pathlib import Path
 from jsonargparse._namespace import Namespace
 from torchvision import models, transforms
 from torch import nn
+from superdl.cache_coordinator_client import CacheCoordinatorClient
 from image_classification.utils import *
 from image_classification.datasets import *
 from image_classification.samplers import *
 from torch import optim
 from torch.utils.data import DataLoader
 from image_classification.training import *
-from SuperDL.cache_coordinator_client import CacheCoordinatorClient
 
 def main(fabric: Fabric,hparams:Namespace) -> None:
     exp_start_time = time.time()
