@@ -2,18 +2,18 @@ from jsonargparse import CLI, ArgumentParser, ActionConfigFile
 from typing import Any, Optional, Tuple, Union
 from lightning.fabric.strategies import FSDPStrategy
 from lightning.fabric import Fabric
-import torchvision.models as models
 import torch
 from main import main
 import os
+#import cProfile
 
-MODEL_NAMES = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
-
-DATA_BACKEND_CHOICES = ['super', 'vanilla-pytorch']
 
 def initialize_parser(config_file: str) -> ArgumentParser:
+    
+    from torchvision.models import list_models
+
+    data_backend_choices = ['super', 'vanilla-pytorch']
+
     parser = ArgumentParser(prog="app", description="Description for my app", default_config_files=[config_file])
     
     #parser.add_argument('--config', action=ActionConfigFile)
@@ -39,7 +39,7 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     parser.add_argument('--workload.profile', default=False, action="store_true")
 
     # Model Configuration
-    parser.add_argument("--model.arch", type=str, default=None, required=True, choices=MODEL_NAMES, help="model architecture: {}".format(", ".join(MODEL_NAMES)))
+    parser.add_argument("--model.arch", type=str, default=None, required=True, choices=list_models(), help="model architecture: {}".format(", ".join(list_models())))
     parser.add_argument("--model.weight_decay", default=1e-4, type=float, help="weight decay factor (default: 1e-4)")
     parser.add_argument("--model.lr", type=float, default=0.1, help="initial learning rate (default: 0.1)")
     parser.add_argument("--model.momentum", default=0.9, type=float, help='momentum (default: 0.9)')
@@ -47,7 +47,7 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     parser.add_argument('--model.grad_acc_steps', type=int, default=None)
 
     # Data Configuration
-    parser.add_argument('--data.dataloader_backend', default="super", choices=DATA_BACKEND_CHOICES, help="Choose data backend from {} (default: super-local)".format(", ".join(DATA_BACKEND_CHOICES)))
+    parser.add_argument('--data.dataloader_backend', default="super", choices=data_backend_choices, help="Choose data backend from {} (default: super-local)".format(", ".join(data_backend_choices)))
     parser.add_argument('--data.dataset_name', type=str, default=None, required=True)
     parser.add_argument('--data.data_dir', type=str, default=None, required=True)
     parser.add_argument('--data.batch_size', type=int, default=128, help="number of samples per batch")

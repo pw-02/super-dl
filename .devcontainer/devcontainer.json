@@ -1,36 +1,36 @@
 {
-    "name": "Super",
-    "context": "..",
-    "dockerFile": "./Dockerfile",
-    "postCreateCommand": "chmod +x ./.devcontainer/setup.sh && sh ./.devcontainer/setup.sh",
-    "runArgs": [
-      // if you have a GPU, you can use it inside the container
+  "name": "super",
+  "context": "..",
+  "dockerFile": "./Dockerfile",
+  "postCreateCommand": "chmod +x ./.devcontainer/setup.sh && sh ./.devcontainer/setup.sh",
+  "runArgs": [
       "--gpus=all",
-      // speeds up pytorch data loading
       "--ipc=host"
-    ],
-    "mounts": [
-      // important: see respective sections in setup.sh
-  
-      // uncomment if you want to use your local aws credentials
-      //"source=${env:HOME}${env:USERPROFILE}/.aws,target=/root/.aws,type=bind",
-      // uncomment if you want to use the host docker socket inside the container
-      //"source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
-    ],
-	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-    //"remoteUser": "root",
-
-    "customizations": {
+  ],
+  "mounts": [
+      // Uncomment if you want to use your local AWS credentials
+       "source=${env:HOME}${env:USERPROFILE}/.aws,target=/root/.aws,type=bind"
+      // Uncomment if you want to use the host Docker socket inside the container
+      // "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+  // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+  // "remoteUser": "root",
+  "customizations": {
       "vscode": {
-        "extensions": [
-			"ms-python.python",
-			"ms-python.vscode-pylance",
-			"ms-python.isort",
-			"mutantdino.resourcemonitor",
-			"redhat.vscode-yaml",
-			"GrapeCity.gc-excelviewer",
-			"kangping.protobuf"
-		]
+          "extensions": [
+            "ms-python.python",
+            "ms-python.vscode-pylance",
+            "ms-python.isort",
+            "mutantdino.resourcemonitor",
+            "redhat.vscode-yaml",
+            "GrapeCity.gc-excelviewer",
+            "kangping.protobuf",
+            "amazonwebservices.aws-toolkit-vscode",
+            "tamasfe.even-better-toml"
+          ]
       }
-    }
-  }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+}
+}

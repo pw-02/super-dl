@@ -311,4 +311,4 @@ def calculate_average(values):
 
 
 if __name__ == "__main__":
-    create_job_report(1, '/workspaces/super-dl/MLWorkload/Classification/logs/cifar10/version_33')
+    create_job_report(1, '/workspaces/super-dl/mlworkloads/classification/reports/cifar10/version_0')

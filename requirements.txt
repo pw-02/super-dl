@@ -1,15 +1,17 @@
 torch
 torchvision
 lightning
-configargparse
 jsonargparse
-redis
-
-#export PYTHONPATH=/workspaces/super-dl
-/workspaces/super-dl/superdl
+boto3
+grpcio
+grpcio-tools
+pandas
+xlsxwriter
+awscli
+aws-sam-cli
 #nlp workload
 #tiktoken
 #datasets
-#
 #wandb
 #transformers
+#export PYTHONPATH=/workspaces/super-dl

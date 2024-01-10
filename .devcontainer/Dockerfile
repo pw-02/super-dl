@@ -40,8 +40,11 @@ RUN /opt/conda/bin/conda config --set ssl_verify False \
     && ln -s /opt/conda/bin/pip /usr/local/bin/pip3
 
 # Install requirements
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && rm requirements.txt
+COPY requirements.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
+
+# Set PYTHONPATH
+ENV PYTHONPATH=/workspaces/super-dl
 
 CMD ["/bin/bash"]
