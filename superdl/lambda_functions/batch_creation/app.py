@@ -9,7 +9,9 @@ from PIL import Image
 from io import BytesIO
 
 # Externalize configuration parameters
-REDIS_HOST = 'localhost'
+#REDIS_HOST = '172.17.0.2'
+REDIS_HOST = 'host.docker.internal' #use this when testing locally on .dev container
+
 REDIS_PORT = 6379
 
 s3_client = boto3.client('s3')
