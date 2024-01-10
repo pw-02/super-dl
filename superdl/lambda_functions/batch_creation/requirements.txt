@@ -4,3 +4,4 @@ torch==1.13.1+cpu
 torchvision==0.14.1+cpu
 pillow
 boto3
+redis
