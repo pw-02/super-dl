@@ -5,13 +5,15 @@ from pathlib import Path
 from jsonargparse._namespace import Namespace
 from torchvision import models, transforms
 from torch import nn
-from superdl.cache_coordinator_client import CacheCoordinatorClient
+from superdl.asyncgrpc.client import SuperDLAsyncClient
+import redis
 from image_classification.utils import *
 from image_classification.datasets import *
 from image_classification.samplers import *
 from torch import optim
 from torch.utils.data import DataLoader
 from image_classification.training import *
+import asyncio
 
 def main(fabric: Fabric,hparams:Namespace) -> None:
     exp_start_time = time.time()
@@ -109,17 +111,13 @@ def initialize_dataloader(
     dataloader = None  # Initialize to None for clarity
 
     if hparams.data.dataloader_backend == "super":
-        cache_client:CacheCoordinatorClient = None
-        super_client:CacheCoordinatorClient = None
-       
-        if hparams.super_dl.use_coordinator:
-            pass
-            # Create connection to the super client
-            # cache_coordinator_client = CacheCoordinatorClient(server_address=hparams.gprc_server_address)
-            # cache_coordinator_client.register_job(job_id=hparams.job_id, data_dir=hparams.data_dir, source_system='local')
 
         if hparams.super_dl.use_cache:
-            pass
+            cache_client = redis.StrictRedis(host=hparams.super_dl.cache_host, port=hparams.super_dl.cache_port) # Instantiate cache client
+
+        if hparams.super_dl.use_coordinator_service:
+            super_client = SuperDLAsyncClient()  # Synchronous instantiation
+            asyncio.run(super_client.create_client(hparams.super_dl.server_address))  # Synchronous initialization
 
         if hparams.super_dl.mode == "local":
             dataset = SUPERLocalDataset(

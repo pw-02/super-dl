@@ -3,3 +3,4 @@ mlworkloads/classification/reports/
 super-dl/lambda-pytorch/
 superdl/lambda/.aws-sam/
 superdl/lambda-helloworld/
+dump.rdb

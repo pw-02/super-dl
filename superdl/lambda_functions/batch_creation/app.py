@@ -7,6 +7,7 @@ import zlib
 import concurrent.futures
 from PIL import Image
 from io import BytesIO
+import json
 
 # Externalize configuration parameters
 #REDIS_HOST = '172.17.0.2'
@@ -70,6 +71,9 @@ def deserialize_torchvision_transformation(serialized_transform):
 def lambda_handler(event, context):
     try:
         #Extract information from the event
+        body = event['body']
+        event = json.loads(body)
+
         bucket_name = event['bucket_name']
         batch_metadata = event['batch_metadata']
         batch_id = event['batch_id']
@@ -100,7 +104,7 @@ def lambda_handler(event, context):
         return {
             'statusCode': 200,
             'body': 'Processing completed successfully.'
-            #'body': [serialized_tensor_batch]
+            #'body': event
             }
     
     except Exception as e:

@@ -57,8 +57,10 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     # Super DL Configuration
     parser.add_argument('--super_dl.server_address', type=str, default='localhost:50051')
     parser.add_argument('--super_dl.use_cache', default=False, action="store_true")
-    parser.add_argument('--super_dl.use_coordinator', default=False, action="store_true")
+    parser.add_argument('--super_dl.use_coordinator_service', default=False, action="store_true")
     parser.add_argument('--super_dl.cache_host', type=str, default='localhost')
+    parser.add_argument('--super_dl.cache_port', type=int, default=6379)
+
     parser.add_argument('--super_dl.prefetch_lookahead', type=int, default=32)
     parser.add_argument('--super_dl.s3_lambda_name', type=str,  default=False)
     parser.add_argument('--super_dl.mode', default="local", choices=['local','s3'])
