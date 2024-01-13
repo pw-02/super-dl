@@ -5,6 +5,7 @@ from lightning.fabric import Fabric
 import torch
 from main import main
 import os
+import asyncio
 #import cProfile
 
 
@@ -100,7 +101,9 @@ def setup(config_file: str, devices: int, precision: Optional[str]) -> None:
         hparams.workload.max_minibatches_per_epoch //= fabric.world_size
     hparams.job_id = os.getpid()
     #fabric.print(hparams)
-    fabric.launch(main, hparams=hparams)
+    asyncio.run(fabric.launch(main, hparams=hparams))
+
+    #fabric.launch(main, hparams=hparams)
 
     
 

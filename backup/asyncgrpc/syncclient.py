@@ -5,7 +5,6 @@ from superdl.asyncgrpc.protos import cache_coordinator_pb2_grpc as cache_coordin
 import os
 import json
 
-
 async def create_client():
     # Create a gRPC channel
     channel = grpc.aio.insecure_channel('localhost:50051')  # Adjust the address based on your gRPC server configuration
@@ -46,9 +45,13 @@ async def main():
     await asyncio.gather(*tasks)
     # Continue with other tasks or exit the program
     print("Continuing with other tasks or exiting the program...")
-    await asyncio.sleep(70)
 
 
-if __name__ == '__main__':
-    # Run the client asynchronously
+def sync_code():
+    # Create an event loop
     asyncio.run(main())
+
+# Run the synchronous code
+if __name__ == '__main__':
+    sync_code()
+    print('moved on')

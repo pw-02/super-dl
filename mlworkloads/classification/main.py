@@ -15,17 +15,17 @@ from torch.utils.data import DataLoader
 from image_classification.training import *
 import asyncio
 
-def main(fabric: Fabric,hparams:Namespace) -> None:
+async def main(fabric: Fabric,hparams:Namespace) -> None:
     exp_start_time = time.time()
    
     # Prepare for training
-    model, optimizer, scheduler, train_dataloader, val_dataloader, logger = prepare_for_training(
+    model, optimizer, scheduler, train_dataloader, val_dataloader, logger = await  prepare_for_training(
         fabric=fabric,hparams=hparams)
         
     logger.log_hyperparams(hparams)
 
     # Run training
-    run_training(
+    await run_training(
         fabric=fabric,
         model=model,
         optimizer=optimizer,
