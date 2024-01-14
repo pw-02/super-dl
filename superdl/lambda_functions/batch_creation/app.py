@@ -18,11 +18,19 @@ REDIS_PORT = 6379
 s3_client = boto3.client('s3')
 redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT) # Instantiate Redis client
 
+use_local = True
+
 def download_file(bucket_name, file_path):
-    # Download file into memory
-    obj = s3_client.get_object(Bucket=bucket_name, Key=file_path)
-    content = obj['Body'].read()
-    return content
+
+    if use_local:
+        with open(file_path, 'rb') as file:
+            content = file.read()
+        return content
+    else:
+        # Download file into memory
+        obj = s3_client.get_object(Bucket=bucket_name, Key=file_path)
+        content = obj['Body'].read()
+        return content
 
 def process_file(content, transformations):
     image = Image.open(BytesIO(content))

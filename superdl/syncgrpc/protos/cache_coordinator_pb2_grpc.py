@@ -3,13 +3,13 @@
 import grpc
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
-from superdl.syncgrpc.protos import cache_coordinator_pb2 as superdl_dot_asyncgrpc_dot_protos_dot_cache__coordinator__pb2
+from superdl.syncgrpc.protos import cache_coordinator_pb2 as superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2
 
 
 class CacheCoordinatorServiceStub(object):
     """
     Command to create stub files:
-    python -m grpc_tools.protoc --proto_path=. ./superdl/asyncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+    python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
     """
 
     def __init__(self, channel):
@@ -18,9 +18,14 @@ class CacheCoordinatorServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.RegisterJob = channel.unary_unary(
+                '/CacheCoordinatorService/RegisterJob',
+                request_serializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterJobInfo.SerializeToString,
+                response_deserializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterJobResponse.FromString,
+                )
         self.ShareBatchAccessPattern = channel.unary_unary(
                 '/CacheCoordinatorService/ShareBatchAccessPattern',
-                request_serializer=superdl_dot_asyncgrpc_dot_protos_dot_cache__coordinator__pb2.BatchAccessPatternList.SerializeToString,
+                request_serializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.BatchAccessPatternList.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 )
 
@@ -28,10 +33,10 @@ class CacheCoordinatorServiceStub(object):
 class CacheCoordinatorServiceServicer(object):
     """
     Command to create stub files:
-    python -m grpc_tools.protoc --proto_path=. ./superdl/asyncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+    python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
     """
 
-    def ShareBatchAccessPattern(self, request, context):
+    def RegisterJob(self, request, context):
         """rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
         rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
         """
@@ -39,12 +44,23 @@ class CacheCoordinatorServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ShareBatchAccessPattern(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CacheCoordinatorServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'RegisterJob': grpc.unary_unary_rpc_method_handler(
+                    servicer.RegisterJob,
+                    request_deserializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterJobInfo.FromString,
+                    response_serializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterJobResponse.SerializeToString,
+            ),
             'ShareBatchAccessPattern': grpc.unary_unary_rpc_method_handler(
                     servicer.ShareBatchAccessPattern,
-                    request_deserializer=superdl_dot_asyncgrpc_dot_protos_dot_cache__coordinator__pb2.BatchAccessPatternList.FromString,
+                    request_deserializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.BatchAccessPatternList.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
@@ -57,8 +73,25 @@ def add_CacheCoordinatorServiceServicer_to_server(servicer, server):
 class CacheCoordinatorService(object):
     """
     Command to create stub files:
-    python -m grpc_tools.protoc --proto_path=. ./superdl/asyncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+    python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
     """
+
+    @staticmethod
+    def RegisterJob(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/CacheCoordinatorService/RegisterJob',
+            superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterJobInfo.SerializeToString,
+            superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterJobResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
     def ShareBatchAccessPattern(request,
@@ -72,7 +105,7 @@ class CacheCoordinatorService(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/CacheCoordinatorService/ShareBatchAccessPattern',
-            superdl_dot_asyncgrpc_dot_protos_dot_cache__coordinator__pb2.BatchAccessPatternList.SerializeToString,
+            superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.BatchAccessPatternList.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

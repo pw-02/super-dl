@@ -34,7 +34,7 @@ super_dl:
     cache_port: 6379
     prefetch_lookahead: 30
     s3_lambda_name: lambda_fn
-    mode: local
+    source_system: local
 
 data:
     dataloader_backend: super
@@ -43,6 +43,8 @@ data:
     batch_size: 256
     shuffle: True
     drop_last: False
+    s3_bucket_name: lambda_fn
+
 
 
 

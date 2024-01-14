@@ -8,6 +8,7 @@ import json
 import time
 from superdl.logger_config import configure_logger
 from coordinator import Coordinator
+import hashlib
 
 logger = configure_logger()  # Initialize the logger
 
@@ -15,14 +16,21 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
     def __init__(self, coordinator: Coordinator):
         self.coordinator = coordinator
 
+    def RegisterJob(self, request, context):    
+        if  request.dataset_id not in self.coordinator.datasets:
+            #load new dataset
+            dataset_is_ok, message = self.coordinator.add_new_dataset(request.dataset_id,request.data_source_system, data_dir= request.data_dir)
+            if not dataset_is_ok:
+                return cache_coordinator_pb2.RegisterJobResponse(job_registered = dataset_is_ok, message = message)    
+            
+        job_added, message = self.coordinator.add_new_job(request.job_id,request.dataset_id,)
+        return cache_coordinator_pb2.RegisterJobResponse(job_registered=job_added, message = message)
+
     def ShareBatchAccessPattern(self, request, context):
         try:
             logger.info(f"Received Batch Access Pattern for Job {request.job_id}:")
-            for batch in request.batches:
-                time.sleep(1)
-                samples = json.loads(batch.batch_samples)
-                logger.info(f" Job {request.job_id}, Batch ID: {batch.batch_id}, Num Samples: {len(samples)}")
-                self.coordinator.preprocess_new_batch(request.job_id, batch.batch_id, samples)
+            time.sleep(5)
+            self.coordinator.preprocess_new_batches(request.job_id, request.batches, request.batch_type)
         except Exception as e:
             logger.exception(f"Error processing Batch Access Pattern: {e}")
 

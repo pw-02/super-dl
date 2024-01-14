@@ -12,46 +12,37 @@ import os
 from pathlib import Path
 from lightning.fabric import Fabric
 import boto3
-import logging
-
-# Set the logging level for Pillow to WARNING
-logging.getLogger("PIL").setLevel(logging.WARNING)
 
 # Define constants
 REDIS_PORT = 6379
 
 class SUPERDataset(Dataset):
-    def __init__(self, 
-                 fabric: Fabric, 
-                 prefix: str, 
-                 data_dir: str,
+    def __init__(self, fabric: Fabric, prefix: str, 
                  transform: Optional[Callable],
                  cache_client,
-                 use_s3 = False,
-                 s3_bucket_name = None):
+                 super_client,
+                 s3_bucket_name,
+                 lambda_function_name):
         
         self.fabric = fabric
         self.prefix = prefix
         self.cache_client = cache_client
         self.transform = transform
+        self._img_classes = None
+        self.super_client = super_client
+        self.lambda_function_name = lambda_function_name
         self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
-        self.s3_bucket_name = s3_bucket_name
-        self.use_s3 = use_s3
-        if self.use_s3:
-            self._sample_classes: Dict[str, List[str]] =  self._classify_samples_s3(data_dir)
-        else:
-            self._sample_classes: Dict[str, List[str]] =  self._classify_samples_local(data_dir)
-
+    
     @functools.cached_property
     def _classed_items(self) -> List[Tuple[str, int]]:
         return [
             (blob, class_index)
-            for class_index, blob_class in enumerate(self._sample_classes)
-            for blob in self._sample_classes[blob_class]
+            for class_index, blob_class in enumerate(self._img_classes)
+            for blob in self._img_classes[blob_class]
         ]
 
     def __len__(self):
-        return sum(len(class_items) for class_items in self._sample_classes.values())
+        return sum(len(class_items) for class_items in self._img_classes.values())
 
     def __getitem__(self, next_batch):
         batch_indices, batch_id = next_batch
@@ -65,13 +56,9 @@ class SUPERDataset(Dataset):
             # Convert JSON batch to torch format
             torch_imgs, torch_labels = self.deserialize_torch_batch(cached_data)
             return torch_imgs, torch_labels, batch_id
-        
-        if self.use_s3:
-            # Cache miss, load from primary storage
-            images, labels = self.fetch_batch_data_s3(batch_indices, batch_id)
-        else:
-            images, labels = self.fetch_batch_data_local(batch_indices, batch_id)
 
+        # Cache miss, load from primary storage
+        images, labels = self.fetch_batch_data(batch_indices, batch_id)
 
         return torch.stack(images), torch.tensor(labels), batch_id
     
@@ -102,8 +89,85 @@ class SUPERDataset(Dataset):
         return torch.stack(imgs), torch.tensor(labels)
     
 
+    
 
-    def _classify_samples_local(self, data_dir) -> Dict[str, List[str]]:
+
+
+
+class SUPERDatasetBase(Dataset):
+    def __init__(self, fabric: Fabric, prefix: str, transform: Optional[Callable],cache_client,super_client, lambda_function_name):
+        self.fabric = fabric
+        self.prefix = prefix
+        self.cache_client = cache_client
+        self.transform = transform
+        self._img_classes = None
+        self.super_client = super_client
+        self.lambda_function_name = lambda_function_name
+        self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
+    
+    @functools.cached_property
+    def _classed_items(self) -> List[Tuple[str, int]]:
+        return [
+            (blob, class_index)
+            for class_index, blob_class in enumerate(self._img_classes)
+            for blob in self._img_classes[blob_class]
+        ]
+
+    def __len__(self):
+        return sum(len(class_items) for class_items in self._img_classes.values())
+
+    def __getitem__(self, next_batch):
+        batch_indices, batch_id = next_batch
+
+        if self.cache_client is not None:
+            cached_data = self.cache_client.get(batch_id)
+        else:
+            cached_data = None
+
+        if cached_data:
+            # Convert JSON batch to torch format
+            torch_imgs, torch_labels = self.deserialize_torch_batch(cached_data)
+            return torch_imgs, torch_labels, batch_id
+
+        # Cache miss, load from primary storage
+        images, labels = self.fetch_batch_data(batch_indices, batch_id)
+
+        return torch.stack(images), torch.tensor(labels), batch_id
+    
+    def is_image_file(self, filename:str):
+        return any(filename.endswith(extension) for extension in self.img_extensions)
+
+    def deserialize_torch_batch(self, batch_data):
+        batch_data = base64.b64decode(batch_data)
+        decompressed = gzip.decompress(batch_data)
+        buffer = io.BytesIO(decompressed)
+        decoded_batch = torch.load(buffer)
+        batch_imgs = decoded_batch['inputs']
+        batch_labels = decoded_batch['labels']
+        return batch_imgs, batch_labels
+    
+    def convert_json_batch_to_torch_format(self, batch_data):
+        samples = json.loads(batch_data)
+        imgs = []
+        labels = []
+
+        for img, label in samples:
+            img = Image.open(io.BytesIO(base64.b64decode(img)))
+            if self.transform is not None:
+                img = self.transform(img)
+
+            imgs.append(img)
+            labels.append(label)
+        return torch.stack(imgs), torch.tensor(labels)
+    
+
+class SUPERLocalDataset(SUPERDatasetBase):
+    def __init__(self, fabric: Fabric, prefix: str, data_dir: str, transform: Optional[Callable], cache_client, super_client,lambda_function_name: str ):
+        super().__init__(fabric, prefix, transform, cache_client, super_client, lambda_function_name)
+        self._img_classes = self._classify_imgs(data_dir)
+        fabric.print("Finished loading {} index. Total files:{}, Total classes:{}".format(self.prefix, len(self), len(self._img_classes)))
+
+    def _classify_imgs(self, data_dir) -> Dict[str, List[str]]:
         data_dir = str(Path(data_dir) / self.prefix)
 
         img_classes: Dict[str, List[str]] = {}
@@ -126,7 +190,41 @@ class SUPERDataset(Dataset):
 
         return img_classes
     
-    def _classify_samples_s3(self, s3url: S3Url) -> Dict[str, List[str]]:
+    
+    def fetch_batch_data(self, batch_indices, batch_id):
+        images = []
+        labels = []
+
+        for idx in batch_indices:
+            path, label = self._classed_items[idx]
+            img = Image.open(path)
+
+            if img.mode == "L":
+                img = img.convert("RGB")
+
+            if self.transform is not None:
+                img = self.transform(img)
+
+            images.append(img)
+            labels.append(label)
+
+        return images, labels
+
+class SUPERS3Dataset(SUPERDatasetBase):
+    def __init__(self, fabric: Fabric, prefix: str, data_dir: str, lambda_function_name: str, cache_client, super_client, transform: Optional[Callable] = None):
+        super().__init__(fabric, prefix, transform,cache_client, super_client, lambda_function_name)
+        self.lambda_function_name = lambda_function_name
+        self.s3_client = boto3.client('s3')
+        self._img_classes = self._classify_blobs_s3(S3Url(data_dir))
+        fabric.print("Finished loading {} index. Total files:{}, Total classes:{}".format(self.prefix, len(self), len(self._img_classes)))
+    
+    def fetch_batch_data(self, batch_indices, batch_id):
+        self.load_from_s3(batch_id)
+        s3_key = f"{self.s3_prefix}/{self.dataset_split}/{batch_id}.pt"
+        s3_object = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
+        s3_data = s3_object['Body'].read() 
+
+    def _classify_blobs_s3(self, s3url: S3Url) -> Dict[str, List[str]]:
         s3_client = boto3.client('s3')
         s3_resource = boto3.resource("s3")
 
@@ -148,9 +246,9 @@ class SUPERDataset(Dataset):
 
             return blob_classes
         except Exception as e:
-                # Handle exceptions, e.g., log them
-                print(f"Error in _classify_blobs_s3: {e}")
-                return None
+            # Handle exceptions, e.g., log them
+            print(f"Error in _classify_blobs_s3: {e}")
+            return None
 
     def _create_index_file_s3(self, s3url: S3Url) -> Dict[str, List[str]]:
         import json
@@ -183,28 +281,3 @@ class SUPERDataset(Dataset):
         index_object.put(Body=(bytes(json.dumps(blob_classes, indent=4).encode('UTF-8'))))
 
         return blob_classes
-    
-    def fetch_batch_data_local(self, batch_indices, batch_id):
-        images = []
-        labels = []
-
-        for idx in batch_indices:
-            path, label = self._classed_items[idx]
-            img = Image.open(path)
-
-            if img.mode == "L":
-                img = img.convert("RGB")
-
-            if self.transform is not None:
-                img = self.transform(img)
-
-            images.append(img)
-            labels.append(label)
-
-        return images, labels
-    
-    def fetch_batch_data_s3(self, batch_indices, batch_id):
-        self.load_from_s3(batch_id)
-        s3_key = f"{self.s3_prefix}/{self.dataset_split}/{batch_id}.pt"
-        s3_object = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
-        s3_data = s3_object['Body'].read()

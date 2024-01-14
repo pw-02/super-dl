@@ -7,7 +7,7 @@ import sys
 # Specify the path to your module
 #print(sys.path)
 
-from superdl.cache_coordinator_client import CacheCoordinatorClient
+from superdl.syncgrpc.client import SuperClient
 
 T = TypeVar('T')
 
@@ -111,22 +111,24 @@ class SuperBatchSampler():
   
 
 class SUPERSampler(SuperBatchSampler):
-    def __init__(self, dataset: Sized, job_id: int, super_client: CacheCoordinatorClient = None, shuffle: bool = True, seed: int = 0, 
-                 batch_size:int = 16, drop_last: bool = False, prefetch_look_ahead = 10):
+    def __init__(self, dataset: Sized, job_id: int, prefix, super_client: SuperClient = None, shuffle: bool = True, seed: int = 0, 
+                 batch_size:int = 16, drop_last: bool = False, prefetch_lookahead = 10):
         
         base_sampler = SuperBaseSampler(data_source=dataset, shuffle=shuffle, seed=seed)
 
         super(SUPERSampler, self).__init__(base_sampler, batch_size, drop_last)
         self.super_client = super_client
-        self.prefetch_look_ahead = prefetch_look_ahead
+        self.prefetch_lookahead = prefetch_lookahead
         self.job_id = job_id
+        self.prefix = prefix 
         
     def share_future_batch_accesses(self, batches: List[List[int]]) -> None:
         """
         Share future batch accesses with the CacheCoordinatorClient.
         """
+        
         if batches and self.super_client is not None:
-            self.super_client.send_batch_access_pattern(job_id=self.job_id, batches=batches)
+            self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, batch_type = self.prefix)
 
 
     def __iter__(self) -> Iterator[List[int]]:
@@ -137,7 +139,7 @@ class SUPERSampler(SuperBatchSampler):
         batch_iter = super().__iter__()
         batches_exhausted = False
 
-        for _ in range(self.prefetch_look_ahead * 2):
+        for _ in range(self.prefetch_lookahead * 2):
             try:
                 batch_buffer.append(next(batch_iter))
             except StopIteration:
@@ -146,9 +148,9 @@ class SUPERSampler(SuperBatchSampler):
         self.share_future_batch_accesses(batch_buffer)
 
         while batch_buffer:
-            if len(batch_buffer) <= self.prefetch_look_ahead and not batches_exhausted:
+            if len(batch_buffer) <= self.prefetch_lookahead and not batches_exhausted:
                 prefetch_buffer = []
-                for _ in range(self.prefetch_look_ahead):
+                for _ in range(self.prefetch_lookahead):
                     try:
                         prefetch_buffer.append(next(batch_iter))
                     except StopIteration:
@@ -165,7 +167,7 @@ def test_sampler(dataset, job_id, use_super = False, num_Epochs=1, batch_size=10
     cache_coordinator_client = None
 
     if use_super:
-        cache_coordinator_client = CacheCoordinatorClient()
+        cache_coordinator_client = SuperClient()
         cache_coordinator_client.register_job(job_id,data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
 
     super_grpc_batch_sampler = SUPERSampler(data_source=dataset, job_id= job_id, super_client=cache_coordinator_client,

@@ -54,6 +54,7 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     parser.add_argument('--data.batch_size', type=int, default=128, help="number of samples per batch")
     parser.add_argument('--data.shuffle', default=False, action="store_true")
     parser.add_argument('--data.drop_last', default=False, action="store_true")
+    parser.add_argument('--data.s3_bucket_name', type=str, default=None, required=True)
 
     # Super DL Configuration
     parser.add_argument('--super_dl.server_address', type=str, default='localhost:50051')
@@ -64,7 +65,7 @@ def initialize_parser(config_file: str) -> ArgumentParser:
 
     parser.add_argument('--super_dl.prefetch_lookahead', type=int, default=32)
     parser.add_argument('--super_dl.s3_lambda_name', type=str,  default=False)
-    parser.add_argument('--super_dl.mode', default="local", choices=['local','s3'])
+    parser.add_argument('--super_dl.source_system', default="local", choices=['local','s3'])
 
     parser.add_argument("--config", action=ActionConfigFile)  
     return parser
@@ -101,9 +102,7 @@ def setup(config_file: str, devices: int, precision: Optional[str]) -> None:
         hparams.workload.max_minibatches_per_epoch //= fabric.world_size
     hparams.job_id = os.getpid()
     #fabric.print(hparams)
-    asyncio.run(fabric.launch(main, hparams=hparams))
-
-    #fabric.launch(main, hparams=hparams)
+    fabric.launch(main, hparams=hparams)
 
     
 
