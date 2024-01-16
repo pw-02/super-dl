@@ -3,12 +3,8 @@ from concurrent import futures
 import protos.cache_coordinator_pb2 as cache_coordinator_pb2
 import protos.cache_coordinator_pb2_grpc as cache_coordinator_pb2_grpc
 import google.protobuf.empty_pb2
-import threading
-import json
-import time
 from superdl.logger_config import logger
 from coordinator import Coordinator
-import hashlib
 
 class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorServiceServicer):
     def __init__(self, coordinator: Coordinator):
@@ -20,7 +16,7 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
         return cache_coordinator_pb2.RegisterJobResponse(job_registered=job_added, message = message)
     
     def RegisterDataset(self, request, context):
-        dataset_added, message = self.coordinator.add_new_dataset(request.dataset_id,request.source_system, data_dir= request.data_dir)
+        dataset_added, message = self.coordinator.add_new_dataset(request.dataset_id,request.source_system, data_dir=request.data_dir, labelled_samples=request.labelled_samples)
         logger.info(f"{message}")
         return cache_coordinator_pb2.RegisterDatasetResponse(dataset_registered=dataset_added, message = message)
     
@@ -34,10 +30,9 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
 
         return google.protobuf.empty_pb2.Empty()
     
-    
     def ShareJobMetrics(self, request, context):
         try:
-            logger.info(f"Received metrics for job '{request.job_id}'")
+            # logger.info(f"Received metrics for job '{request.job_id}'")
             #time.sleep(5)
             self.coordinator.process_job_metrics(request.job_id, request.dataset_id, request.metrics)
         except Exception as e:

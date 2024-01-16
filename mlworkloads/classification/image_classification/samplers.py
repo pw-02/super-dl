@@ -163,6 +163,7 @@ class SUPERSampler(SuperBatchSampler):
 
 
 def test_sampler(dataset, job_id, use_super = False, num_Epochs=1, batch_size=10):
+        
     cache_coordinator_client = None
 
     if use_super:

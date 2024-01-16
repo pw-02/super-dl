@@ -47,7 +47,7 @@ class Coordinator:
         
         # Initialize thread pool executors
         self.pre_process_executor = futures.ThreadPoolExecutor(max_workers=1)
-        self.processing_executor =  futures.ThreadPoolExecutor(max_workers=2) #this must always be at least 2
+        self.processing_executor =  futures.ThreadPoolExecutor(max_workers=1) #this must always be at least 2
         self.post_processing_executor =  futures.ThreadPoolExecutor(max_workers=1)
         self.dequeuing_stop_event = threading.Event()
         self.lock = threading.Lock()  # Added lock for thread safety
@@ -67,12 +67,12 @@ class Coordinator:
             return False,  message
     
     
-    def add_new_dataset(self, dataset_id, source_system, data_dir):
+    def add_new_dataset(self, dataset_id, source_system, data_dir, labelled_samples):
         try:
             if dataset_id in self.datasets:
                 return True, f"Skipped Dataset '{dataset_id}' Registration. Already Registered"
             else:
-                dataset = Dataset(dataset_id, source_system, data_dir)
+                dataset = Dataset(dataset_id, source_system, data_dir, labelled_samples)
                 if len(dataset) > 1:
                     with self.lock:  # Use lock to ensure thread safety
                         self.datasets[dataset_id] = dataset
@@ -134,7 +134,7 @@ class Coordinator:
 
                 job_id, dataset_id, batch_id = item
                 # Use a ThreadPoolExecutor to process the item
-                logger.info(f"Dequeued Batch for Processing. Batch Id: {batch_id}, Access Time: {priority}")
+                # logger.info(f"Dequeued Batch for Processing. Batch Id: {batch_id}, Access Time: {priority}")
 
                 self.processing_executor.submit(self.process_batch, job_id, batch_id, dataset_id)
         except Exception as e:
@@ -236,7 +236,7 @@ class Coordinator:
                 # Check if MAE is not None before reporting
                 if mae is not None:
                     # logger.info(f"Mean Absolute Error for Sample {job_id} in Batch {batch_id}: {mae}")
-                    logger.info(f"Job:{job_id}, Batch:{batch_id}, Predited:{format_timestamp(predicted_time)}, Actual:{format_timestamp(batch_access_time)}, MAE:{mae}, Cache Hit:{cache_hit}")
+                    logger.info(f"Job:{job_id}, Batch Id:{batch_id}, Predited:{format_timestamp(predicted_time)}, Actual:{format_timestamp(batch_access_time)}, MAE:{mae}, Cache Hit:{cache_hit}")
 
             # Submit the function for asynchronous execution
             metrics = json.loads(metrics)

@@ -36,6 +36,7 @@ class SUPERDataset(Dataset):
             self.samples: Dict[str, List[str]] =  self._classify_samples_s3(S3Url(data_dir))
         else:
             self.samples: Dict[str, List[str]] =  self._classify_samples_local(data_dir)
+        pass
 
     @functools.cached_property
     def _classed_items(self) -> List[Tuple[str, int]]:

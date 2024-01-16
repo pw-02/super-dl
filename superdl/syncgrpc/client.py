@@ -26,11 +26,12 @@ class SuperClient:
             pass
             #  logger.info(f"Failed to Register Job with Id: '{job_id}'. Server Message: '{response.message}'.")
 
-    def register_dataset(self, dataset_id, data_dir, source_system):
+    def register_dataset(self, dataset_id, data_dir, source_system, labelled_samples):
         dataset_info = cache_coordinator_pb2.RegisterDatasetInfo(
             dataset_id=dataset_id,
             data_dir=data_dir,
-            source_system=source_system)
+            source_system=source_system,
+            labelled_samples = json.dumps(labelled_samples))
         
         try:
             response = self.stub.RegisterDataset(dataset_info)  

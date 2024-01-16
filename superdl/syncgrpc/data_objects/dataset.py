@@ -29,16 +29,19 @@ class S3Url(object):
 
 
 class Dataset():
-    def __init__(self, dataset_id, source_system, data_dir):
+    def __init__(self, dataset_id, source_system, data_dir, labelled_samples):
         self.dataset_id = dataset_id
         self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
         self.source_system = source_system
         self.data_dir = data_dir
-        
-        if source_system =='local':
-            self.samples =self._classify_samples_local(data_dir)
-        elif source_system == 's3':
-            self.samples =self._classify_samples_s3(S3Url(data_dir))
+
+        if labelled_samples:
+             self.samples = json.loads(labelled_samples)
+        else:     
+            if source_system =='local':
+                self.samples =self._classify_samples_local(data_dir)
+            elif source_system == 's3':
+                self.samples =self._classify_samples_s3(S3Url(data_dir))
 
         self.batches: Dict[int, Batch] = {}  # Dictionary to store batch information        
     

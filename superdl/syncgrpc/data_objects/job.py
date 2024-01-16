@@ -10,6 +10,7 @@ class Job:
         self.dataset_ids = dataset_ids
         self.cache_hits  = 0
         self.cache_misses  = 0
+        self.job_active = True
 
     def increment_cache_hit_count(self) :
         with self.lock:

@@ -15,6 +15,10 @@ service CacheCoordinatorService {
 
 }
 
+ message JoEnded {
+    int32 job_id = 1;
+}
+
   message JobMetricsInfo {
     int32 job_id = 1;
     string dataset_id =2;
@@ -34,6 +38,7 @@ message RegisterDatasetResponse {
   string dataset_id =1;
   string data_dir =2;
   string source_system =3;
+  string labelled_samples = 4;
 }
 
   message RegisterJobInfo {
