@@ -8,7 +8,7 @@ def configure_logger():
     
     # Configure the root logger with a custom log format
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.WARNING,
         format='%(levelname)s: %(message)s'  # This format excludes the logger name
         )
     

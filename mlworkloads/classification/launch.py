@@ -50,7 +50,9 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     # Data Configuration
     parser.add_argument('--data.dataloader_backend', default="super", choices=data_backend_choices, help="Choose data backend from {} (default: super-local)".format(", ".join(data_backend_choices)))
     parser.add_argument('--data.dataset_name', type=str, default=None, required=True)
-    parser.add_argument('--data.data_dir', type=str, default=None, required=True)
+    parser.add_argument('--data.train_data_dir', type=str, default=None, required=False)
+    parser.add_argument('--data.eval_data_dir', type=str, default=None, required=False)
+
     parser.add_argument('--data.batch_size', type=int, default=128, help="number of samples per batch")
     parser.add_argument('--data.shuffle', default=False, action="store_true")
     parser.add_argument('--data.drop_last', default=False, action="store_true")
@@ -59,7 +61,6 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     # Super DL Configuration
     parser.add_argument('--super_dl.server_address', type=str, default='localhost:50051')
     parser.add_argument('--super_dl.use_cache', default=False, action="store_true")
-    parser.add_argument('--super_dl.use_coordinator_service', default=False, action="store_true")
     parser.add_argument('--super_dl.cache_host', type=str, default='localhost')
     parser.add_argument('--super_dl.cache_port', type=int, default=6379)
 
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
     defaults = {
-        "config_file": 'mlworkloads/classification/configs/train_resnet18.yaml',
+        "config_file": 'mlworkloads/classification/configs/train_resnet18_s3.yaml',
         'devices': 1,
         'precision': None,
     }

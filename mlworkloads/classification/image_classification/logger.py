@@ -15,7 +15,10 @@ from lightning.fabric.utilities.types import _PATH
 
 # A Python program to demonstrate working of OrderedDict
 from collections import OrderedDict
-log = logging.getLogger(__name__)
+
+from image_classification.logger_config import configure_logger
+log = configure_logger()  # Initialize the logger
+
 
 class BaseMetrics:
     def __init__(self):
@@ -60,6 +63,9 @@ class SUPERLogger(Logger):
         self.iteration_aggregator = IterationMetrics()
         self.epoch_aggregator  = {'train':EpochMetrics(), 'val':EpochMetrics()}
         self._log_rank_0_only = True
+
+
+
 
     def record_iteration_metrics(self,epoch,step, global_step, num_sampels ,iteration_time, data_time,
                         compute_time, compute_ips, total_ips, 
@@ -109,6 +115,7 @@ class SUPERLogger(Logger):
                 sub_dict = {key: iteration_metrics_dict[key] for key in sub_dict_keys if key in iteration_metrics_dict}
                 new_keys_values.update(sub_dict)
                 self.display_progress(new_keys_values)
+        return iteration_metrics_dict
 
 
     def display_progress(self,display_info:dict[str,float]):

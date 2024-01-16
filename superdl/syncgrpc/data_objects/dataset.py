@@ -7,6 +7,7 @@ import boto3
 from urllib.parse import urlparse
 from data_objects.batch import Batch
 
+
 class S3Url(object):
     def __init__(self, url):
         self._parsed = urlparse(url, allow_fragments=False)
@@ -33,61 +34,37 @@ class Dataset():
         self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
         self.source_system = source_system
         self.data_dir = data_dir
-
+        
         if source_system =='local':
-            self._train_classes =self._classify_samples_local(data_dir, 'train')
-            self._val_classes =self._classify_samples_local(data_dir, 'val')
+            self.samples =self._classify_samples_local(data_dir)
         elif source_system == 's3':
-            self._train_classes =self._classify_samples_s3(data_dir)
-            self._val_classes =self._classify_samples_s3(data_dir)
-        
-        self.train_batches: Dict[int, Batch] = {}  # Dictionary to store batch information
-        self.val_batches: Dict[int, Batch] = {}  # Dictionary to store batch information
-        
+            self.samples =self._classify_samples_s3(S3Url(data_dir))
+
+        self.batches: Dict[int, Batch] = {}  # Dictionary to store batch information        
     
     @functools.cached_property
-    def _train_classed_items(self) -> List[Tuple[str, int]]:
+    def _classed_items(self) -> List[Tuple[str, int]]:
         return [
             (blob, class_index)
-            for class_index, blob_class in enumerate(self._train_classes)
-            for blob in self._train_classes[blob_class]
+            for class_index, blob_class in enumerate(self.samples)
+            for blob in self.samples[blob_class]
         ]
     
-    @functools.cached_property
-    def _val_classed_items(self) -> List[Tuple[str, int]]:
-        return [
-            (blob, class_index)
-            for class_index, blob_class in enumerate(self._val_classes)
-            for blob in self._val_classes[blob_class]
-        ]
-    
-    def get_samples_for_batch(self, bacth: Batch):
-        
-        labelled_samples = []
-        sample_indicies = bacth.batch_sample_indices
-
-        if bacth.batch_type == 'train':
-            for i in sample_indicies:
-                labelled_samples.append(self._train_classed_items[i])
-
-        elif bacth.batch_type == 'val':
-            for i in sample_indicies:
-                labelled_samples.append(self._val_classed_items[i])
-
-    
-
-    
+    def get_samples_for_batch(self, batch_sample_indices):
+        samples = []
+        for i in  batch_sample_indices:
+                samples.append(self._classed_items[i])
+        return samples
+   
 
     def __len__(self):
-        train = sum(len(class_items) for class_items in self._train_classes.values())
-        val = sum(len(class_items) for class_items in self._val_classes.values())
-        return train+val
+        return sum(len(class_items) for class_items in self.samples.values())
 
     def is_image_file(self, filename:str):
         return any(filename.endswith(extension) for extension in self.img_extensions)
     
-    def _classify_samples_local(self, data_dir, prefix) -> Dict[str, List[str]]:
-        data_dir = str(Path(data_dir) / prefix)
+    def _classify_samples_local(self, data_dir) -> Dict[str, List[str]]:
+        data_dir = str(Path(data_dir))
 
         img_classes: Dict[str, List[str]] = {}
         index_file = Path(data_dir) / 'index.json'

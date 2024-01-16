@@ -8,8 +8,17 @@ python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coord
 service CacheCoordinatorService {
   //rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
   //rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
+  rpc RegisterDataset(RegisterDatasetInfo) returns (RegisterDatasetResponse);
   rpc RegisterJob(RegisterJobInfo) returns (RegisterJobResponse);
   rpc ShareBatchAccessPattern(BatchAccessPatternList) returns (google.protobuf.Empty);
+  rpc ShareJobMetrics(JobMetricsInfo) returns (google.protobuf.Empty);
+
+}
+
+  message JobMetricsInfo {
+    int32 job_id = 1;
+    string dataset_id =2;
+    string metrics = 3;
 }
 
 message RegisterJobResponse {
@@ -17,19 +26,26 @@ message RegisterJobResponse {
   string message =2;
   }
 
-  message RegisterJobInfo {
-  int32 job_id = 1;
-  string dataset_id =2;
-  string data_dir =3;
-  string data_source_system =4;
+message RegisterDatasetResponse {
+  bool dataset_registered = 1;
+  string message =2;
+  }
+  message RegisterDatasetInfo {
+  string dataset_id =1;
+  string data_dir =2;
+  string source_system =3;
 }
 
+  message RegisterJobInfo {
+  int32 job_id = 1;
+  repeated string dataset_ids = 2;
+
+}
 
 message BatchAccessPatternList {
     int64 job_id = 1;
     repeated Batch batches = 2;
-    string batch_type =3;
-  // Add other information as needed.
+    string dataset_id =3;
 }
 
 message Batch {

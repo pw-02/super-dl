@@ -5,8 +5,7 @@ from superdl.logger_config import configure_logger
 logger = configure_logger()
 
 class Batch:
-    def __init__(self, batch_id, batch_sample_indices, batch_type):
-        self.batch_type = batch_type
+    def __init__(self, batch_id, batch_sample_indices):
         self.batch_id = batch_id
         self.last_accessed = None
         self.is_cached = False

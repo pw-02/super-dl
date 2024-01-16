@@ -5,53 +5,50 @@ from .utils import S3Url
 import torch
 import functools
 import base64
-import gzip
 import io
 import json
 import os
 from pathlib import Path
-from lightning.fabric import Fabric
 import boto3
-import logging
+import zlib
 
-# Set the logging level for Pillow to WARNING
-logging.getLogger("PIL").setLevel(logging.WARNING)
+from image_classification.logger_config import configure_logger
+logger = configure_logger()  # Initialize the logger
 
 # Define constants
 REDIS_PORT = 6379
 
 class SUPERDataset(Dataset):
     def __init__(self, 
-                 fabric: Fabric, 
-                 prefix: str, 
                  data_dir: str,
                  transform: Optional[Callable],
                  cache_client,
-                 use_s3 = False,
+                 source_system,
                  s3_bucket_name = None):
         
-        self.fabric = fabric
-        self.prefix = prefix
+        self.dataset_id =  f"{source_system}_{data_dir}"
         self.cache_client = cache_client
         self.transform = transform
+        self.data_dir = data_dir
+        self.source_system = source_system
         self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
         self.s3_bucket_name = s3_bucket_name
-        self.use_s3 = use_s3
+        self.use_s3 = True if source_system == 's3' else False
         if self.use_s3:
-            self._sample_classes: Dict[str, List[str]] =  self._classify_samples_s3(data_dir)
+            self.samples: Dict[str, List[str]] =  self._classify_samples_s3(S3Url(data_dir))
         else:
-            self._sample_classes: Dict[str, List[str]] =  self._classify_samples_local(data_dir)
+            self.samples: Dict[str, List[str]] =  self._classify_samples_local(data_dir)
 
     @functools.cached_property
     def _classed_items(self) -> List[Tuple[str, int]]:
         return [
             (blob, class_index)
-            for class_index, blob_class in enumerate(self._sample_classes)
-            for blob in self._sample_classes[blob_class]
+            for class_index, blob_class in enumerate(self.samples)
+            for blob in self.samples[blob_class]
         ]
 
     def __len__(self):
-        return sum(len(class_items) for class_items in self._sample_classes.values())
+        return sum(len(class_items) for class_items in self.samples.values())
 
     def __getitem__(self, next_batch):
         batch_indices, batch_id = next_batch
@@ -64,7 +61,7 @@ class SUPERDataset(Dataset):
         if cached_data:
             # Convert JSON batch to torch format
             torch_imgs, torch_labels = self.deserialize_torch_batch(cached_data)
-            return torch_imgs, torch_labels, batch_id
+            return torch_imgs, torch_labels, batch_id, True
         
         if self.use_s3:
             # Cache miss, load from primary storage
@@ -73,19 +70,21 @@ class SUPERDataset(Dataset):
             images, labels = self.fetch_batch_data_local(batch_indices, batch_id)
 
 
-        return torch.stack(images), torch.tensor(labels), batch_id
+        return torch.stack(images), torch.tensor(labels), batch_id, False
     
     def is_image_file(self, filename:str):
         return any(filename.endswith(extension) for extension in self.img_extensions)
 
     def deserialize_torch_batch(self, batch_data):
-        batch_data = base64.b64decode(batch_data)
-        decompressed = gzip.decompress(batch_data)
-        buffer = io.BytesIO(decompressed)
-        decoded_batch = torch.load(buffer)
-        batch_imgs = decoded_batch['inputs']
-        batch_labels = decoded_batch['labels']
-        return batch_imgs, batch_labels
+        decoded_data = base64.b64decode(batch_data) # Decode base64
+        try:
+            decoded_data = zlib.decompress(decoded_data)
+        except:
+            pass
+      
+        buffer = io.BytesIO(decoded_data)
+        batch_samples, batch_labels = torch.load(buffer)
+        return  batch_samples, batch_labels 
     
     def convert_json_batch_to_torch_format(self, batch_data):
         samples = json.loads(batch_data)
@@ -104,7 +103,7 @@ class SUPERDataset(Dataset):
 
 
     def _classify_samples_local(self, data_dir) -> Dict[str, List[str]]:
-        data_dir = str(Path(data_dir) / self.prefix)
+        data_dir = str(Path(data_dir))
 
         img_classes: Dict[str, List[str]] = {}
         index_file = Path(data_dir) / 'index.json'
@@ -204,7 +203,25 @@ class SUPERDataset(Dataset):
         return images, labels
     
     def fetch_batch_data_s3(self, batch_indices, batch_id):
-        self.load_from_s3(batch_id)
-        s3_key = f"{self.s3_prefix}/{self.dataset_split}/{batch_id}.pt"
-        s3_object = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
-        s3_data = s3_object['Body'].read()
+        s3_client = boto3.client('s3')
+        images = []
+        labels = []
+
+        for idx in batch_indices:
+            file_path, label = self._classed_items[idx]
+            # Download file into memory
+            obj = s3_client.get_object(Bucket=self.s3_bucket_name, Key=file_path)
+            content = obj['Body'].read()
+
+            img = Image.open(io.BytesIO(content))
+
+            if img.mode == "L":
+                img = img.convert("RGB")
+
+            if self.transform is not None:
+                img = self.transform(img)
+
+            images.append(img)
+            labels.append(label)
+
+        return images, labels

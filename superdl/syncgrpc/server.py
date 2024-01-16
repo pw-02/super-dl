@@ -16,25 +16,38 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
     def __init__(self, coordinator: Coordinator):
         self.coordinator = coordinator
 
-    def RegisterJob(self, request, context):    
-        if  request.dataset_id not in self.coordinator.datasets:
-            #load new dataset
-            dataset_is_ok, message = self.coordinator.add_new_dataset(request.dataset_id,request.data_source_system, data_dir= request.data_dir)
-            if not dataset_is_ok:
-                return cache_coordinator_pb2.RegisterJobResponse(job_registered = dataset_is_ok, message = message)    
-            
-        job_added, message = self.coordinator.add_new_job(request.job_id,request.dataset_id,)
+    def RegisterJob(self, request, context):
+        job_added, message = self.coordinator.add_new_job(request.job_id,request.dataset_ids)
+        logger.info(f"{message}")
         return cache_coordinator_pb2.RegisterJobResponse(job_registered=job_added, message = message)
-
+    
+    def RegisterDataset(self, request, context):
+        dataset_added, message = self.coordinator.add_new_dataset(request.dataset_id,request.source_system, data_dir= request.data_dir)
+        logger.info(f"{message}")
+        return cache_coordinator_pb2.RegisterDatasetResponse(dataset_registered=dataset_added, message = message)
+    
     def ShareBatchAccessPattern(self, request, context):
         try:
-            logger.info(f"Received Batch Access Pattern for Job {request.job_id}:")
-            time.sleep(5)
-            self.coordinator.preprocess_new_batches(request.job_id, request.batches, request.batch_type)
+            logger.info(f"Received next {len(request.batches)} batches for job '{request.job_id}'")
+            #time.sleep(5)
+            self.coordinator.preprocess_new_batches(request.job_id, request.batches, request.dataset_id)
         except Exception as e:
             logger.exception(f"Error processing Batch Access Pattern: {e}")
 
         return google.protobuf.empty_pb2.Empty()
+    
+    
+    def ShareJobMetrics(self, request, context):
+        try:
+            logger.info(f"Received metrics for job '{request.job_id}'")
+            #time.sleep(5)
+            self.coordinator.process_job_metrics(request.job_id, request.dataset_id, request.metrics)
+        except Exception as e:
+            logger.exception(f"Error processing Batch Access Pattern: {e}")
+
+        return google.protobuf.empty_pb2.Empty()
+
+
 
 def serve():
     try:

@@ -14,13 +14,15 @@ from image_classification.utils import *
 from image_classification.datasets import *
 from image_classification.samplers import *
 from image_classification.training import *
+from image_classification.logger_config import configure_logger
 
+logger = configure_logger()  # Initialize the logger
 
 def main(fabric: Fabric,hparams:Namespace) -> None:
     exp_start_time = time.time()
    
     # Prepare for training
-    model, optimizer, scheduler, train_dataloader, val_dataloader, logger = prepare_for_training(
+    model, optimizer, scheduler, train_dataloader, val_dataloader, logger, super_client = prepare_for_training(
         fabric=fabric,hparams=hparams)
         
     logger.log_hyperparams(hparams)
@@ -34,7 +36,8 @@ def main(fabric: Fabric,hparams:Namespace) -> None:
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
         hparams=hparams,
-        logger=logger
+        logger=logger,
+        super_client=super_client
     )
 
     exp_duration = time.time() - exp_start_time
@@ -64,38 +67,41 @@ def prepare_for_training(fabric: Fabric,hparams:Namespace):
     transformations = initialize_transformations()
 
     # Initialize cache and super
-    cache_client = initialize_cache_client(hparams.super_dl.use_cache, hparams.super_dl.cache_host, hparams.super_dl.cache_port)
-
-    #Initialize datasets
-    training_dataset, val_dataset = initialize_datasets(
-        fabric=fabric, 
-        dataloader_backend=hparams.data.dataloader_backend,
-        transformations=transformations,
-        data_dir=hparams.data.data_dir,
-        use_s3=True if hparams.super_dl.source_system == "s3" else False,
-        s3_bucket_name=hparams.data.s3_bucket_name,
-        run_training= hparams.workload.run_training,
-        run_evaluate= hparams.workload.run_evaluate,
-        cache_client=cache_client
-        )
+    cache_client = redis.StrictRedis(host=hparams.super_dl.cache_host, port=hparams.super_dl.cache_port) if hparams.super_dl.use_cache else None    
+    super_client = SuperClient(hparams.super_dl.server_address) if hparams.data.dataloader_backend == 'super' else None
     
-    #Initialize super_client
-    super_client = None
-    if hparams.data.dataloader_backend == 'super':
-        super_client = initialize_super_client(hparams.super_dl.server_address, hparams.job_id, hparams.super_dl.source_system, hparams.data.data_dir)                
+    # Initialize dataloaders
+    eval_dataloader = None
+    train_dataloader = None
 
-    # Initialize Samplers
-    train_sampler,val_sampler  = initialize_samplers(training_dataset, val_dataset,hparams.job_id, super_client,
-                                                     shuffle=hparams.data.shuffle,batch_size=hparams.data.batch_size,
-                                                     drop_last=hparams.data.drop_last,prefetch_lookahead=hparams.super_dl.prefetch_lookahead)
-    # Initialize DataLoaders
     if hparams.workload.run_training:
-        train_dataloader= DataLoader(training_dataset, sampler=train_sampler, batch_size=None, num_workers=hparams.pytorch.workers)
+        train_dataloader = initialize_dataloader(
+            hparams=hparams,
+            transformations=transformations,
+            is_training=True,
+            cache_client=cache_client,
+            super_client=super_client
+        )
         train_dataloader = fabric.setup_dataloaders(train_dataloader)
-
+    
     if hparams.workload.run_evaluate:
-        val_dataloader= DataLoader(val_dataset, sampler=val_sampler, batch_size=None, num_workers=hparams.pytorch.workers)
-        val_dataloader = fabric.setup_dataloaders(val_dataloader)
+        eval_dataloader = initialize_dataloader(
+            hparams=hparams,
+            transformations=transformations,
+            is_training=False,
+            cache_client=cache_client,
+            super_client=super_client
+        )
+        eval_dataloader = fabric.setup_dataloaders(eval_dataloader)
+
+    #register job with super
+    if hparams.data.dataloader_backend == 'super' and super_client is not None:
+        register_job_with_super(
+            super_client=super_client,
+            job_id=   hparams.job_id,
+            train_dataset= None if train_dataloader is None else train_dataloader.dataset,
+            evaluation_dataset= None if eval_dataloader is None else eval_dataloader.dataset)
+
 
     #Initialize logger
     logger = SUPERLogger( fabric=fabric, root_dir=hparams.workload.log_dir,
@@ -104,8 +110,7 @@ def prepare_for_training(fabric: Fabric,hparams:Namespace):
                           exp_name=hparams.workload.exp_name)
    
     
-    return model, optimizer, scheduler, train_dataloader, val_dataloader, logger
-
+    return model, optimizer, scheduler, train_dataloader, eval_dataloader, logger, super_client
 
 def initialize_model(fabric: Fabric, arch: str) -> nn.Module: 
     with fabric.init_module(empty_init=True): #model is instantiated with randomly initialized weights by default.
@@ -129,82 +134,76 @@ def initialize_cache_client(use_cache: bool, cache_host: str, cache_port: int):
     return redis.StrictRedis(host=cache_host, port=cache_port) if use_cache else None
 
 
-def initialize_super_client(server_address: str, job_id, data_source_system, data_dir):
+def initialize_dataloader(hparams:Namespace, transformations, is_training = False, cache_client = None, super_client = None):
     
-    dataset_id = hashlib.sha256(f"{data_source_system}_{data_dir}".encode()).hexdigest()
-    super_client = SuperClient(server_address)
-    super_client.register_new_job(job_id=job_id,dataset_id=dataset_id, data_source_system=data_source_system, data_dir=data_dir)
+    dataset = initialize_dataset(
+        dataloader_backend=hparams.data.dataloader_backend,
+        transformations=transformations,
+        data_dir=hparams.data.train_data_dir if is_training else hparams.data.eval_data_dir,
+        source_system=hparams.super_dl.source_system,
+        s3_bucket_name=hparams.data.s3_bucket_name,
+        cache_client=cache_client)
+    
+    sampler = initialize_sampler(
+        dataset, 
+        hparams.job_id, 
+        super_client,
+        shuffle=hparams.data.shuffle,
+        batch_size=hparams.data.batch_size,
+        drop_last=hparams.data.drop_last,
+        prefetch_lookahead=hparams.super_dl.prefetch_lookahead)
+        
+    return DataLoader(dataset, sampler=sampler, batch_size=None, num_workers=hparams.pytorch.workers)
+
+
+def register_job_with_super(super_client: SuperClient, job_id, train_dataset:SUPERDataset, evaluation_dataset:SUPERDataset):
+    #dataset_id = hashlib.sha256(f"{data_source_system}_{data_dir}".encode()).hexdigest()
+    job_dataset_ids = []
+    if train_dataset is not None:
+        super_client.register_dataset(train_dataset.dataset_id, train_dataset.data_dir, train_dataset.source_system)
+        job_dataset_ids.append(train_dataset.dataset_id)
+    if evaluation_dataset is not None:
+        super_client.register_dataset(evaluation_dataset.dataset_id, evaluation_dataset.data_dir, evaluation_dataset.source_system)
+        job_dataset_ids.append(evaluation_dataset.dataset_id)
+
+    super_client.register_new_job(job_id=job_id,job_dataset_ids=job_dataset_ids)
+    
     return super_client
     
 
-def initialize_samplers(training_dataset, validation_dataset, job_id,super_client,shuffle, batch_size, drop_last,prefetch_lookahead):
-    train_sampler = None
-    val_sampler = None
-
-    if training_dataset is not None:
-        train_sampler = SUPERSampler(
-        dataset=training_dataset,
+def initialize_sampler(dataset, job_id,super_client,shuffle, batch_size, drop_last,prefetch_lookahead):
+    
+    return SUPERSampler(
+        dataset=dataset,
         job_id=job_id,
         super_client=super_client,
         shuffle=shuffle,
-        prefix='train',
         seed=1,
         batch_size=batch_size,
         drop_last=drop_last,
         prefetch_lookahead=prefetch_lookahead
-        )
-    if validation_dataset is not None:
-        val_sampler = SUPERSampler(
-        dataset=validation_dataset,
-        job_id=job_id,
-        super_client=super_client,
-        shuffle=False,
-        prefix='val',
-        seed=1,
-        batch_size=batch_size,
-        drop_last=drop_last,
-        prefetch_lookahead=prefetch_lookahead
-        )
-    return train_sampler, val_sampler
-        
+    )
 
-def initialize_datasets(fabric: Fabric, 
+
+def initialize_dataset( 
                         dataloader_backend:str, 
                         transformations: transforms.Compose,
                         data_dir:str,
-                        use_s3:bool,
+                        source_system:str,
                         s3_bucket_name:str,
-                        run_training:bool,
-                        run_evaluate:bool,
                         cache_client=None,
                         ):
     
-    train_data = None
-    val_data = None
 
     if dataloader_backend == "super":
-        if run_training:     
-           train_data = SUPERDataset(
-                fabric=fabric,
-                prefix='train',
+        return SUPERDataset(
                 data_dir=data_dir,
                 transform=transformations,
                 cache_client=cache_client,
-                use_s3=use_s3,
+                source_system=source_system,
                 s3_bucket_name=s3_bucket_name
                 )
-        
-        if run_evaluate:     
-            val_data = SUPERDataset(
-                fabric=fabric,
-                prefix='val',
-                data_dir=data_dir,
-                transform=transformations,
-                cache_client=cache_client,
-                use_s3=use_s3,
-                s3_bucket_name=s3_bucket_name
-                )
-    return train_data, val_data
+    
 
 def initialize_transformations() -> transforms.Compose:
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])

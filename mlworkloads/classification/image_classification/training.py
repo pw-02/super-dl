@@ -7,14 +7,15 @@ from .utils import *
 from .datasets import *
 from .samplers import *
 from torch.utils.data import DataLoader
-from image_classification.logger import SUPERLogger, EpochMetrics
+from image_classification.logger import SUPERLogger
 import torch.optim as optim
 from datetime import datetime
+from superdl.syncgrpc.client import SuperClient
 
 
 def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimizer, scheduler:optim.lr_scheduler.LRScheduler,
                 train_dataloader: DataLoader, val_dataloader: DataLoader, hparams:Namespace,
-                 logger:SUPERLogger) -> None:
+                 logger:SUPERLogger, super_client:SuperClient = None) -> None:
     
     for epoch in range(hparams.workload.epochs):
         if hparams.workload.run_evaluate:
@@ -32,6 +33,7 @@ def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimize
                          epoch=epoch,
                          hparams=hparams,
                          is_training=False,
+                         super_client=super_client,
                          total_batches=total_batches)
             
         if hparams.workload.run_training:
@@ -47,6 +49,7 @@ def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimize
                          epoch=epoch,
                          hparams=hparams,
                          is_training=True,
+                         super_client=super_client,
                          total_batches=total_batches)
 
     logger.job_end()
@@ -56,13 +59,13 @@ def run_training(fabric: Fabric, model:torch.nn.Module, optimizer:optim.Optimize
 def process_data(fabric: Fabric, dataloader: DataLoader, 
                  global_step:int, model:torch.nn.Module, 
                  optimizer:torch.optim.SGD, logger:SUPERLogger, epoch, hparams:Namespace,
-                 total_batches:int, is_training=True): 
+                 total_batches:int, is_training, super_client:SuperClient): 
     
     logger.epoch_start(epoch_length=total_batches,is_training=is_training)
     model.train(is_training)
     end = time.perf_counter()
-
-    for iteration, (input, target, batch_id) in enumerate(dataloader):
+    start_time = time.time()
+    for iteration, (input, target, batch_id, cache_hit) in enumerate(dataloader):
         num_sampels = input.size(0)
         data_time = time.perf_counter() - end
         
@@ -91,7 +94,7 @@ def process_data(fabric: Fabric, dataloader: DataLoader,
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
   
-        logger.record_iteration_metrics(
+        metrics_dict = logger.record_iteration_metrics(
             epoch=epoch,
             step=iteration,
             global_step = global_step,
@@ -106,8 +109,14 @@ def process_data(fabric: Fabric, dataloader: DataLoader,
             top5=to_python_float(prec5),
             batch_id=batch_id,
             is_training=is_training,
+            )
+    
+        if super_client is not None:
+            metrics_dict['access_time'] = start_time
+            metrics_dict['training_speed'] = logger.iteration_aggregator.compute_time.avg
+            metrics_dict['cache_hit'] = cache_hit
+            super_client.share_job_metrics(dataset_id=dataloader.dataset.dataset_id, metrics=metrics_dict)
 
-        )
         global_step+=1
 
         #if (iteration + 1) % hparams.log_interval == 0:
@@ -121,6 +130,7 @@ def process_data(fabric: Fabric, dataloader: DataLoader,
             break
 
         end = time.perf_counter()
+        start_time = time.time()
     
     logger.epoch_end(epoch, is_training=is_training)
 

@@ -10,6 +10,7 @@ logger = configure_logger()  # Initialize the logger
 class SuperClient:
     def __init__(self, server_address='localhost:50051'):
         self.stub = self.create_client(server_address)
+        self.job_id = None
 
     def create_client(self, server_address):
         # Create a gRPC channel
@@ -18,16 +19,32 @@ class SuperClient:
         # Create a gRPC stub
         return cache_coordinator_pb2_grpc.CacheCoordinatorServiceStub(channel)
     
-    def register_new_job(self, job_id, dataset_id, data_source_system, data_dir):
-        job_info = cache_coordinator_pb2.RegisterJobInfo(job_id=job_id, dataset_id=dataset_id,data_dir=data_dir, data_source_system=data_source_system)
+    def register_new_job(self, job_id, job_dataset_ids):
+        job_info = cache_coordinator_pb2.RegisterJobInfo(job_id=job_id, dataset_ids=job_dataset_ids)
         response = self.stub.RegisterJob(job_info)  
         if response.job_registered:
             logger.info(f"Registered Job with Id: '{job_id}'")
+            self.job_id = job_id
         else:
              logger.info(f"Failed to Register Job with Id: '{job_id}'. Server Message: '{response.message}'.")
 
+    def register_dataset(self, dataset_id, data_dir, source_system):
+        dataset_info = cache_coordinator_pb2.RegisterDatasetInfo(
+            dataset_id=dataset_id,
+            data_dir=data_dir,
+            source_system=source_system)
+        
+        try:
+            response = self.stub.RegisterDataset(dataset_info)  
+            if response.dataset_registered:
+                logger.info(f"Registered Dataset with Id: '{dataset_id}'")
+            else:
+                logger.error(f"Failed to Register Dataset with Id: '{dataset_id}'. Server Message: '{response.message}'.")
+        except Exception as e:
+            logger.error(f"Error registering dataset '{dataset_id}': {e}")
 
-    def share_batch_access_pattern(self, job_id, batches:list, batch_type):
+
+    def share_batch_access_pattern(self, job_id, batches:list, dataset_id):
         if self.stub is None:
             raise RuntimeError("Client not initialized. Call create_client() first.")
         batch_access_pattern_list = cache_coordinator_pb2.BatchAccessPatternList(
@@ -36,11 +53,31 @@ class SuperClient:
             cache_coordinator_pb2.Batch(batch_id=batch[1], sample_indices=batch[0])
             for batch in batches
         ],
-        batch_type=batch_type)
+        dataset_id=dataset_id)
 
         # Make the gRPC call
         response = self.stub.ShareBatchAccessPattern(batch_access_pattern_list)
         pass
+
+    def share_job_metrics(self, dataset_id, metrics:dict):
+        if self.stub is None:
+            raise RuntimeError("Client not initialized. Call create_client() first.")
+        
+        job_metrics = cache_coordinator_pb2.JobMetricsInfo(
+        job_id=self.job_id,
+        dataset_id = dataset_id,
+        metrics = json.dumps(metrics))
+
+        # Make the gRPC call
+        response = self.stub.ShareJobMetrics(job_metrics)
+        pass
+
+
+
+
+
+
+
 
 def run_client():
     # Create a gRPC client

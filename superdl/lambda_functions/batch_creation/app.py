@@ -8,7 +8,7 @@ import concurrent.futures
 from PIL import Image
 from io import BytesIO
 import json
-
+import os
 # Externalize configuration parameters
 #REDIS_HOST = '172.17.0.2'
 REDIS_HOST = 'host.docker.internal' #use this when testing locally on .dev container
@@ -18,11 +18,14 @@ REDIS_PORT = 6379
 s3_client = boto3.client('s3')
 redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT) # Instantiate Redis client
 
-use_local = True
+use_local = False
 
 def download_file(bucket_name, file_path):
-
+# Print current working directory
+    print("Current Working Directory:", os.getcwd())
     if use_local:
+        os.chdir('/workspaces/super-dl/')
+        file_path = os.path.join(os.getcwd(), file_path)
         with open(file_path, 'rb') as file:
             content = file.read()
         return content
@@ -51,6 +54,7 @@ def download_and_process_file(bucket_name, sample, transformations):
 
 def create_torch_batch(bucket_name, batch_metadata, transformations):
     with concurrent.futures.ThreadPoolExecutor() as executor:
+        #executor._max_workers = 4
         futures = {executor.submit(download_and_process_file, bucket_name, sample, transformations): sample for sample in batch_metadata}
         sample_list = []
         label_list = []

@@ -32,18 +32,19 @@ super_dl:
     server_address: localhost:50051
     cache_host: localhost
     cache_port: 6379
-    prefetch_lookahead: 30
+    prefetch_lookahead: 5
     s3_lambda_name: lambda_fn
     source_system: local
 
 data:
     dataloader_backend: super
     dataset_name: cifar10
-    data_dir: /workspaces/super-dl/datasets/vision/cifar-10
-    batch_size: 256
-    shuffle: True
+    train_data_dir: /workspaces/super-dl/datasets/vision/cifar-10/train
+    eval_data_dir: /workspaces/super-dl/datasets/vision/cifar-10/val
+    batch_size: 1
+    shuffle: False
     drop_last: False
-    s3_bucket_name: lambda_fn
+    s3_bucket_name: sdl-cifar10
 
 
 

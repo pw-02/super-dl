@@ -32,9 +32,9 @@ def test_create_batch_local_api():
     sam_local_url = 'http://localhost:3000'  # Adjust the port as needed
     sam_function_path = '/create_batch'  # Replace with the actual path
 
-    base_path = 'train/Airplane/attack_aircraft_s_001210.png',0
+    base_path = '/workspaces/super-dl/datasets/vision/cifar-10/train/Airplane/twinjet_s_001513.png',0
     batch_id = 1
-    num_samples =  16
+    num_samples =  1
     payload_data = event(batch_id, base_path, num_samples)
     #payload_data = json.dumps(payload_data)
 
@@ -45,16 +45,15 @@ def test_create_batch_local_api():
         # Check the response status code
         if response.status_code == 200:
             # Parse and print the response JSON
-            response_json = response.json()
-            print(response_json)
+            print(response)
         else:
             print(f"Error invoking SAM function. Status code: {response.status_code}")
 
     except Exception as e:
         print(f"Error invoking SAM function: {e}")
     
-        batch_samples, batch_labels  = decode_cached_bacth(redis_client.get(batchid))
-        pass
+    batch_samples, batch_labels  = decode_cached_bacth(redis_client.get(batchid))
+    pass
    
 
 def decode_cached_bacth(serialized_tensor_batch):
@@ -71,7 +70,7 @@ def decode_cached_bacth(serialized_tensor_batch):
 
 def test_end_to_end_inc_cache():
     redis_client = redis.StrictRedis(host='localhost', port=6379) # Instantiate Redis client
-    base_path = 'train/Airplane/attack_aircraft_s_001210.png',0
+    base_path = 'datasets/vision/cifar-10/train/Airplane/aeroplane_s_000004.png',0
     batch_id = 1
     num_samples =  1
     new_event = event(batch_id, base_path, num_samples)

@@ -40,7 +40,6 @@ class SuperBaseSampler(Sampler[int]):
 
     def __iter__(self) -> Iterator[int]:
         n = len(self.data_source)
-
         if self.shuffle:
             g = torch.Generator()
             g.manual_seed(self.seed + self.epoch)
@@ -111,7 +110,7 @@ class SuperBatchSampler():
   
 
 class SUPERSampler(SuperBatchSampler):
-    def __init__(self, dataset: Sized, job_id: int, prefix, super_client: SuperClient = None, shuffle: bool = True, seed: int = 0, 
+    def __init__(self, dataset: Sized, job_id: int, super_client: SuperClient = None, shuffle: bool = True, seed: int = 0, 
                  batch_size:int = 16, drop_last: bool = False, prefetch_lookahead = 10):
         
         base_sampler = SuperBaseSampler(data_source=dataset, shuffle=shuffle, seed=seed)
@@ -120,7 +119,7 @@ class SUPERSampler(SuperBatchSampler):
         self.super_client = super_client
         self.prefetch_lookahead = prefetch_lookahead
         self.job_id = job_id
-        self.prefix = prefix 
+        self.dataset_id = dataset.dataset_id 
         
     def share_future_batch_accesses(self, batches: List[List[int]]) -> None:
         """
@@ -128,7 +127,7 @@ class SUPERSampler(SuperBatchSampler):
         """
         
         if batches and self.super_client is not None:
-            self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, batch_type = self.prefix)
+            self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, dataset_id = self.dataset_id)
 
 
     def __iter__(self) -> Iterator[List[int]]:
