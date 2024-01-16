@@ -5,7 +5,6 @@ from lightning.fabric import Fabric
 import torch
 from main import main
 import os
-import asyncio
 #import cProfile
 
 

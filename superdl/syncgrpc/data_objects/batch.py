@@ -1,8 +1,5 @@
 import time
 import threading
-from superdl.logger_config import configure_logger
-
-logger = configure_logger()
 
 class Batch:
     def __init__(self, batch_id, batch_sample_indices):

@@ -12,8 +12,6 @@ from pathlib import Path
 import boto3
 import zlib
 
-from image_classification.logger_config import configure_logger
-logger = configure_logger()  # Initialize the logger
 
 # Define constants
 REDIS_PORT = 6379

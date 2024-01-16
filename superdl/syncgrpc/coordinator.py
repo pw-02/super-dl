@@ -11,7 +11,7 @@ import requests
 import boto3
 import json
 from concurrent import futures
-logger = configure_logger()
+from superdl.logger_config import logger
 
 
 def format_timestamp(current_timestamp, use_utc=True):

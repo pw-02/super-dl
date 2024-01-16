@@ -3,9 +3,6 @@ import os
 import json
 from superdl.syncgrpc.protos import cache_coordinator_pb2 as cache_coordinator_pb2
 from superdl.syncgrpc.protos import cache_coordinator_pb2_grpc as cache_coordinator_pb2_grpc
-from superdl.logger_config import configure_logger
-
-logger = configure_logger()  # Initialize the logger
 
 class SuperClient:
     def __init__(self, server_address='localhost:50051'):
@@ -23,10 +20,11 @@ class SuperClient:
         job_info = cache_coordinator_pb2.RegisterJobInfo(job_id=job_id, dataset_ids=job_dataset_ids)
         response = self.stub.RegisterJob(job_info)  
         if response.job_registered:
-            logger.info(f"Registered Job with Id: '{job_id}'")
+            # logger.info(f"Registered Job with Id: '{job_id}'")
             self.job_id = job_id
         else:
-             logger.info(f"Failed to Register Job with Id: '{job_id}'. Server Message: '{response.message}'.")
+            pass
+            #  logger.info(f"Failed to Register Job with Id: '{job_id}'. Server Message: '{response.message}'.")
 
     def register_dataset(self, dataset_id, data_dir, source_system):
         dataset_info = cache_coordinator_pb2.RegisterDatasetInfo(
@@ -37,11 +35,14 @@ class SuperClient:
         try:
             response = self.stub.RegisterDataset(dataset_info)  
             if response.dataset_registered:
-                logger.info(f"Registered Dataset with Id: '{dataset_id}'")
+                pass
+                # logger.info(f"Registered Dataset with Id: '{dataset_id}'")
             else:
-                logger.error(f"Failed to Register Dataset with Id: '{dataset_id}'. Server Message: '{response.message}'.")
+                pass
+                # logger.error(f"Failed to Register Dataset with Id: '{dataset_id}'. Server Message: '{response.message}'.")
         except Exception as e:
-            logger.error(f"Error registering dataset '{dataset_id}': {e}")
+            pass
+            # logger.error(f"Error registering dataset '{dataset_id}': {e}")
 
 
     def share_batch_access_pattern(self, job_id, batches:list, dataset_id):

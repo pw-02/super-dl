@@ -4,3 +4,4 @@ super-dl/lambda-pytorch/
 superdl/lambda/.aws-sam/
 superdl/lambda-helloworld/
 dump.rdb
+superdl/log_file.log

@@ -6,11 +6,9 @@ import google.protobuf.empty_pb2
 import threading
 import json
 import time
-from superdl.logger_config import configure_logger
+from superdl.logger_config import logger
 from coordinator import Coordinator
 import hashlib
-
-logger = configure_logger()  # Initialize the logger
 
 class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorServiceServicer):
     def __init__(self, coordinator: Coordinator):

@@ -12,7 +12,13 @@ def configure_logger():
         format='%(levelname)s: %(message)s'  # This format excludes the logger name
         )
     
-    logger = logging.getLogger(__name__)
-    #logger = logging.Logger()
+    # Create a FileHandler and add it to the root logger
+    file_handler = logging.FileHandler('superdl/log_file.log')
+    file_handler.setLevel(logging.DEBUG)  # You can set the level for the file handler as needed
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(file_handler)
 
+    logger = logging.getLogger(__name__)
     return logger
+
+logger = configure_logger()

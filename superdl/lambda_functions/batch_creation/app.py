@@ -54,7 +54,6 @@ def download_and_process_file(bucket_name, sample, transformations):
 
 def create_torch_batch(bucket_name, batch_metadata, transformations):
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        #executor._max_workers = 4
         futures = {executor.submit(download_and_process_file, bucket_name, sample, transformations): sample for sample in batch_metadata}
         sample_list = []
         label_list = []

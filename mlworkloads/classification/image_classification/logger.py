@@ -16,8 +16,8 @@ from lightning.fabric.utilities.types import _PATH
 # A Python program to demonstrate working of OrderedDict
 from collections import OrderedDict
 
-from image_classification.logger_config import configure_logger
-log = configure_logger()  # Initialize the logger
+# from image_classification.logger_config import configure_logger
+# log = configure_logger()  # Initialize the logger
 
 
 class BaseMetrics:
@@ -237,7 +237,7 @@ class SUPERLogger(Logger):
         versions_root = os.path.join(self.root_dir, self.name)
         fs = get_filesystem(self.root_dir)
         if not _is_dir(fs, versions_root, strict=True):
-                log.warning("Missing logger folder: %s", versions_root)
+                #log.warning("Missing logger folder: %s", versions_root)
                 return 0
         
         existing_versions = []
@@ -358,7 +358,7 @@ class SUPERLogger(Logger):
         versions_root = os.path.join(self._root_dir, self.name)
 
         if not _is_dir(self._fs, versions_root, strict=True):
-            log.warning("Missing logger folder: %s", versions_root)
+            #log.warning("Missing logger folder: %s", versions_root)
             return 0
 
         existing_versions = []

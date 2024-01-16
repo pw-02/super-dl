@@ -14,9 +14,7 @@ from image_classification.utils import *
 from image_classification.datasets import *
 from image_classification.samplers import *
 from image_classification.training import *
-from image_classification.logger_config import configure_logger
 
-logger = configure_logger()  # Initialize the logger
 
 def main(fabric: Fabric,hparams:Namespace) -> None:
     exp_start_time = time.time()
