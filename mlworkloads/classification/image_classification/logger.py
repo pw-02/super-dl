@@ -35,7 +35,9 @@ class IterationMetrics(BaseMetrics):
     def __init__(self):
         super().__init__()
         self.iteration_time = AverageMeter("iteration_time", ":6.3f")
-        
+        self.cache_hits = 0
+        self.cache_misses = 0
+
 class EpochMetrics(BaseMetrics):
     def __init__(self):
         super().__init__()
@@ -44,7 +46,9 @@ class EpochMetrics(BaseMetrics):
         self.compute_bps = AverageMeter("compute_bps", ":6.3f")
         self.total_bps = AverageMeter("total_bps", ":6.3f")
         self.epoch_length = 0
-        
+        self.cache_hits = AverageMeter("total_batches", ":6.3f")
+        self.cache_misses = AverageMeter("total_batches", ":6.3f")
+
 
 
 
@@ -69,7 +73,7 @@ class SUPERLogger(Logger):
 
     def record_iteration_metrics(self,epoch,step, global_step, num_sampels ,iteration_time, data_time,
                         compute_time, compute_ips, total_ips, 
-                        loss, top1, top5, batch_id, is_training:bool):
+                        loss, top1, top5, batch_id, is_training:bool, cache_hit:bool):
         dataset_type = 'train' if is_training else 'val'
 
         self.iteration_aggregator.iteration_time.update(iteration_time)
@@ -81,6 +85,11 @@ class SUPERLogger(Logger):
         self.iteration_aggregator.top1.update(top1)
         self.iteration_aggregator.top5.update(top5)
         self.epoch_aggregator[dataset_type].num_samples.update(num_sampels)
+
+        if cache_hit:
+            self.iteration_aggregator.cache_hits +=1
+        else:
+            self.iteration_aggregator.cache_misses +=1
 
         iteration_metrics_dict = OrderedDict(
                                 {
@@ -99,6 +108,7 @@ class SUPERLogger(Logger):
                                     "loss": self.iteration_aggregator.losses.val,
                                     "top1": self.iteration_aggregator.top1.val,
                                     "top5": self.iteration_aggregator.top5.val,#
+                                    "cache_hit": cache_hit
                                     }
                             )
        
@@ -111,7 +121,7 @@ class SUPERLogger(Logger):
             if (self._fabric.is_global_zero and self.log_rank_zero_only) or (not self.log_rank_zero_only):
                 # Filter keys to include only specific keys in the sub-dictionary
                 new_keys_values = {"epoch": epoch, "step": f"{step}/{self.epoch_aggregator[dataset_type].epoch_length - 1}"}
-                sub_dict_keys = ["total_time", "data_time", "compute_time", "total_ips", "loss", "top1"]
+                sub_dict_keys = ["total_time", "data_time", "compute_time", "cache_hit"]
                 sub_dict = {key: iteration_metrics_dict[key] for key in sub_dict_keys if key in iteration_metrics_dict}
                 new_keys_values.update(sub_dict)
                 self.display_progress(new_keys_values)
@@ -137,6 +147,8 @@ class SUPERLogger(Logger):
         data_time = self.iteration_aggregator.data_time.sum
         compute_time = self.iteration_aggregator.compute_time.sum
         total_samples = self.epoch_aggregator[dataset_type].num_samples.sum
+        cache_hits = self.iteration_aggregator.cache_hits
+        cache_misses = self.iteration_aggregator.cache_misses
 
         self.epoch_aggregator[dataset_type].total_batches.update(total_batches)
         self.epoch_aggregator[dataset_type].epoch_time.update(epoch_time)
@@ -146,6 +158,9 @@ class SUPERLogger(Logger):
         self.epoch_aggregator[dataset_type].top1.update(self.iteration_aggregator.top1.avg)
         self.epoch_aggregator[dataset_type].top5.update(self.iteration_aggregator.top5.avg)
         
+        self.epoch_aggregator[dataset_type].cache_misses.update(cache_misses)
+        self.epoch_aggregator[dataset_type].cache_hits.update(cache_hits)
+
         self.epoch_aggregator[dataset_type].compute_ips.update(calc_throughput_per_second(total_samples,compute_time))
         self.epoch_aggregator[dataset_type].total_ips.update(calc_throughput_per_second(total_samples,epoch_time))
         
@@ -168,6 +183,9 @@ class SUPERLogger(Logger):
                                     "loss(avg)": self.epoch_aggregator[dataset_type].losses.val,
                                     "top1(avg)": self.epoch_aggregator[dataset_type].top1.val,
                                     "top5(avg)": self.epoch_aggregator[dataset_type].top5.val,#
+                                    "cache_hits": self.epoch_aggregator[dataset_type].cache_hits.val,#
+                                    "cache_misses": self.epoch_aggregator[dataset_type].cache_misses.val,#
+
                                     })
         
         self.log_metrics(metrics=epoch_metrics, prefix='train.epoch' if is_training else 'val.epoch', force_save = True)
@@ -176,8 +194,13 @@ class SUPERLogger(Logger):
                 print_seperator_line()
                 print(f"EPOCH {epoch} SUMMARY ({dataset_type}):")
                 # Filter keys to include only specific keys in the sub-dictionary
-                sub_dict_keys = ["device", "num_batches","total_time", "data_time", "compute_time", "total_ips","total_bps", "loss(avg)", "top1(avg)"]
+                sub_dict_keys = ["device", "num_batches","total_time", "data_time", "compute_time" ,"total_bps"]
                 sub_dict = {key: epoch_metrics[key] for key in sub_dict_keys if key in epoch_metrics}
+
+                total_cache_accesses = cache_hits + cache_misses
+
+                sub_dict["cache_hit_rate:"] = (cache_hits / total_cache_accesses) * 100
+
                 self.display_progress(sub_dict)
                 print_seperator_line()
         
@@ -195,6 +218,9 @@ class SUPERLogger(Logger):
                 total_time = self.epoch_aggregator[dataset_type].epoch_time.sum
                 compute_time =  self.epoch_aggregator[dataset_type].compute_time.sum
                 data_time =  self.epoch_aggregator[dataset_type].data_time.sum
+                cache_hits =  self.epoch_aggregator[dataset_type].cache_hits.sum
+                cache_misses =  self.epoch_aggregator[dataset_type].cache_misses.sum
+
                 job_metrics_dict = OrderedDict(
                     {
                         "device": self._fabric.local_rank,
@@ -212,7 +238,9 @@ class SUPERLogger(Logger):
                         "compute_eps": calc_throughput_per_second(total_epochs,compute_time),
                         "loss(avg)": self.epoch_aggregator[dataset_type].losses.val,
                         "top1(avg)": self.epoch_aggregator[dataset_type].top1.val,
-                        "top5(avg)": self.epoch_aggregator[dataset_type].top5.val
+                        "top5(avg)": self.epoch_aggregator[dataset_type].top5.val,
+                        "cache_hits": self.epoch_aggregator[dataset_type].cache_hits.val,#
+                        "cache_misses": self.epoch_aggregator[dataset_type].cache_misses.val,#
                         })
     
                 self.log_metrics(
@@ -225,8 +253,11 @@ class SUPERLogger(Logger):
                 print_seperator_line()
                 print(f"JOB SUMMARY ({dataset_type}):")
                 # Filter keys to include only specific keys in the sub-dictionary
-                sub_dict_keys = ["device","num_epochs", "num_batches","total_time", "data_time", "compute_time", "total_ips","total_bps", "loss", "top1"]
+                sub_dict_keys = ["device","num_epochs", "num_batches","total_time", "data_time", "compute_time", "total_bps"]
                 sub_dict = {key: job_metrics_dict[key] for key in sub_dict_keys if key in job_metrics_dict}
+
+                total_cache_accesses = cache_hits + cache_misses
+                sub_dict["cache_hit_rate:"] = (cache_hits / total_cache_accesses) * 100
                 self.display_progress(sub_dict)
                 print_seperator_line()
     

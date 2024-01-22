@@ -128,8 +128,7 @@ class SUPERSampler(SuperBatchSampler):
         """
         
         if batches and self.super_client is not None:
-            pass
-            #self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, dataset_id = self.dataset_id)
+            self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, dataset_id = self.dataset_id)
 
 
     def __iter__(self) -> Iterator[List[int]]:
@@ -164,34 +163,34 @@ class SUPERSampler(SuperBatchSampler):
             yield batch
 
 
-def test_sampler(dataset, job_id, use_super = False, num_Epochs=1, batch_size=10):
+# def test_sampler(dataset, job_id, use_super = False, num_Epochs=1, batch_size=10):
         
-    cache_coordinator_client = None
+#     cache_coordinator_client = None
 
-    if use_super:
-        cache_coordinator_client = SuperClient()
-        cache_coordinator_client.register_job(job_id,data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
+#     if use_super:
+#         cache_coordinator_client = SuperClient()
+#         cache_coordinator_client.register_new_job(job_id,data_dir='mlworkloads/vision/data/cifar-10', source_system='local')
 
-    super_grpc_batch_sampler = SUPERSampler(data_source=dataset, job_id= job_id, super_client=cache_coordinator_client,
-                                            shuffle=False,
-                                            seed=0,
-                                            batch_size=batch_size,
-                                            drop_last=False)
+#     super_grpc_batch_sampler = SUPERSampler(data_source=dataset, job_id= job_id, super_client=cache_coordinator_client,
+#                                             shuffle=False,
+#                                             seed=0,
+#                                             batch_size=batch_size,
+#                                             drop_last=False)
 
-    train_loader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=None, sampler=super_grpc_batch_sampler)
+#     train_loader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=None, sampler=super_grpc_batch_sampler)
 
-    for epoch in range(num_Epochs):
-        train_loader.sampler.set_seed(epoch)
-        print(f'Epoch: {epoch}:')
-        for batch_indices, batch_id in train_loader:
-            print(f'Batch ID: {batch_id}, Batch Indices: {batch_indices}')
+#     for epoch in range(num_Epochs):
+#         train_loader.sampler.set_seed(epoch)
+#         print(f'Epoch: {epoch}:')
+#         for batch_indices, batch_id in train_loader:
+#             print(f'Batch ID: {batch_id}, Batch Indices: {batch_indices}')
 
-# Usage example
-if __name__ == "__main__":
-    import os
-    xs = list(range(100))
-    ys = list(range(100, 1000))
-    dataset = MyDataset(xs, ys)
-    base_sampler = SuperBaseSampler(dataset, shuffle=False)
-    job_id = os.getpid()
-    test_sampler(dataset=dataset, job_id=job_id, use_super=False,num_Epochs=1, batch_size=1)
+# # Usage example
+# if __name__ == "__main__":
+#     import os
+#     xs = list(range(100))
+#     ys = list(range(100, 1000))
+#     dataset = MyDataset(xs, ys)
+#     base_sampler = SuperBaseSampler(dataset, shuffle=False)
+#     job_id = os.getpid()
+#     test_sampler(dataset=dataset, job_id=job_id, use_super=False,num_Epochs=1, batch_size=1)

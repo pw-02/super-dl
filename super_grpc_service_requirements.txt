@@ -1,12 +1,6 @@
-torch
-torchvision
-lightning
-jsonargparse
 boto3
 grpcio
 grpcio-tools
-pandas
-xlsxwriter
 awscli
 aws-sam-cli
 redis

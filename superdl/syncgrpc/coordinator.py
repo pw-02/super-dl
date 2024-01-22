@@ -27,32 +27,33 @@ def format_timestamp(current_timestamp, use_utc=True):
 
 
 class Coordinator:
-    def __init__(self, lambda_function_name='superlambda-CreateBatchFunction-FHh7VhqBhB0v', aws_region=None, testing_locally=False, s3_bucket_name='sdl-cifar10'):
+
+
+    def __init__(self, lambda_function_name, s3_bucket_name,testing_locally,sam_local_url,sam_local_endpoint  ):
         self.registered_jobs: Dict[int, Job] = {}  # Dictionary to store job information
         self.registered_datasets: Dict[int, Dataset] = {}
 
         self.batch_pqueue = PriorityQueue()  # Priority queue for batch processing using heapq
         self.s3_bucket_name = s3_bucket_name
         self.testing_locally = testing_locally
-
-        if lambda_function_name is not None:
+        self.sam_local_url = sam_local_url
+        self.sam_local_endpoint = sam_local_endpoint
+        self.lambda_function_name = lambda_function_name
+       
+        if not self.testing_locally:
             try:
-                self.lambda_client = boto3.client('lambda', region_name=aws_region)
-                self.lambda_function_name = lambda_function_name
+                self.lambda_client = boto3.client('lambda')
+                #add a function call in here to wake up the lambda
             except Exception as e:
                 logger.error(f"Error initializing Lambda client: {e}")
-                raise
-        if testing_locally:
-            self.sam_local_url = 'http://localhost:3000'
-            self.sam_function_path = '/create_batch'
-        
+
         # Initialize thread pool executors
         self.pre_process_executor = futures.ThreadPoolExecutor(max_workers=1)
         self.processing_executor =  futures.ThreadPoolExecutor(max_workers=5) #this must always be at least 2
         self.post_processing_executor =  futures.ThreadPoolExecutor(max_workers=1)
         self.dequeuing_stop_event = threading.Event()
         self.lock = threading.Lock()  # Added lock for thread safety
-    
+        
     def get_batch_status(self, batch_id, dataset_id):
         batch = self.registered_datasets[dataset_id].batches[batch_id]
         
@@ -202,7 +203,7 @@ class Coordinator:
             }
 
             if self.testing_locally:
-                response = requests.post(f"{self.sam_local_url}{self.sam_function_path}", json=event_data)
+                response = requests.post(f"{self.sam_local_url}{self.sam_local_endpoint}", json=event_data)
             else:
                 response =  self.lambda_client.invoke(FunctionName=self.lambda_function_name,
                                                      #InvocationType='Event',  # Change this based on your requirements

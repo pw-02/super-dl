@@ -5,6 +5,9 @@ import protos.cache_coordinator_pb2_grpc as cache_coordinator_pb2_grpc
 import google.protobuf.empty_pb2
 from superdl.logger_config import logger
 from coordinator import Coordinator
+import yaml
+
+
 
 class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorServiceServicer):
     def __init__(self, coordinator: Coordinator):
@@ -50,12 +53,20 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
 
         return google.protobuf.empty_pb2.Empty()
 
-
-
 def serve():
     try:
+        #sever configuarion
+        with open('superdl/syncgrpc/config.yaml', 'r') as file:
+            config_data = yaml.safe_load(file)
+            
         # Create an instance of the Coordinator class
-        coordinator = Coordinator()
+        coordinator = Coordinator(
+            lambda_function_name=config_data["lambda_function_name"],
+            s3_bucket_name = config_data["s3_bucket_name"],
+            testing_locally = config_data["testing_locally"],
+            sam_local_url = config_data["sam_local_url"],
+            sam_local_endpoint = config_data["sam_local_endpoint"]
+            )
         # Stop the batch processing  workers
         coordinator.start_workers()
         # Initialize the CacheCoordinatorService with the Coordinator instance

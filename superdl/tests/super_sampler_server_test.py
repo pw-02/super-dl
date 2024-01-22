@@ -47,18 +47,18 @@ def test_commuication_with_super_server(server_address='localhost:50051', datase
     job_id = 1
     num_epochs = 2
     super_client = SuperClient(server_address)
-    dataset = SimpleDataset(dataset_id= 'simple_dataset', datset_size=10, num_labels=2)
+    dataset = SimpleDataset(dataset_id= 'simple_dataset', datset_size=100, num_labels=2)
     super_client.register_dataset(dataset.dataset_id, None, None, dataset.samples)
     super_client.register_new_job(job_id=job_id, job_dataset_ids=[dataset.dataset_id])
 
     new_sampler = SUPERSampler(dataset=dataset, job_id=job_id, super_client=super_client, shuffle=False,
-                               batch_size=1, drop_last=False, prefetch_lookahead=2)
+                               batch_size=16, drop_last=False, prefetch_lookahead=2)
     
     train_loader = DataLoader(dataset, num_workers=0, batch_size=None, sampler=new_sampler)
     
     for epoch in range(num_epochs):
         print(f'Epoch: {epoch}:')
-        for batch_id, batch_indices  in train_loader:
+        for batch_id, batch_indices in train_loader:
             print(f'Batch ID: {batch_id}, Batch Indices: {batch_indices}')
 
 if __name__ == '__main__':

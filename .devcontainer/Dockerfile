@@ -20,11 +20,11 @@ ENV CONDA_AUTO_UPDATE_CONDA=false
 RUN apt update \
     && apt install -y bash \
                    build-essential \
-                   git \
+                   #git \
                    curl \
                    ca-certificates \
                    wget \
-                   redis-server \ 
+                   #redis-server \ 
     && rm -rf /var/lib/apt/lists
 
 # Install Miniconda and create main env

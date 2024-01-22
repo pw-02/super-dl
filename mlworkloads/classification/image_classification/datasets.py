@@ -58,18 +58,8 @@ class SUPERDataset(Dataset):
         cached_data = None
         end = time.time()
         if self.cache_client is not None:
-            try:
-                cached_data = self.fetch_from_cache(batch_id)
-            except:
-                cached_data = None
-                print(f'cache miss: {batch_id}')
-                
-                with self.super_client.get_batch_status(batch_id, self.dataset_id) as batch_status:
-                    attempts = 0
-                    while batch_status and cached_data is None and attempts < 100:
-                        cached_data = self.fetch_from_cache(batch_id)
-                        attempts += 1
-
+            cached_data = self.fetch_from_cache(batch_id)
+            
         if cached_data:
             print(f"data fetch from cache {time.time() - end}")
             # Convert JSON batch to torch format
@@ -79,6 +69,8 @@ class SUPERDataset(Dataset):
 
             return torch_imgs, torch_labels, batch_id, True
         
+        print(f'cache miss: {batch_id}')
+
         if self.use_s3:
             # Cache miss, load from primary storage
             images, labels = self.fetch_batch_data_s3(batch_indices, batch_id)
@@ -90,8 +82,30 @@ class SUPERDataset(Dataset):
         return torch.stack(images), torch.tensor(labels), batch_id, False
     
 
-    def fetch_from_cache(self, batch_id):
-       return self.cache_client.get(batch_id)
+    def fetch_from_cache(self, batch_id, max_attempts = 10):
+        cached_data = None
+        attempts = 0
+
+        while attempts < max_attempts:
+            cached_data = self.try_fetch_from_cache(batch_id)
+            if cached_data is not None:
+                break  # Exit the loop if data is successfully fetched
+
+            if attempts >= 0:
+                    # Additional functionality on the second iteration
+                    status = self.super_client.get_batch_status(batch_id, self.dataset_id)
+                    if status == False:  # not cached or in progress, return none and fetch locally
+                        break        
+        attempts += 1
+        return cached_data
+
+    def try_fetch_from_cache(self, batch_id):
+        try:
+            return self.cache_client.get(batch_id)
+        except:
+             return None
+    
+
 
 
     def is_image_file(self, filename:str):

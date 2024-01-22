@@ -14,7 +14,7 @@ import os
 #REDIS_HOST = 'host.docker.internal' #use this when testing locally on .dev container
 #REDIS_PORT = 6379
 
-REDIS_HOST =  "ec2-34-210-71-230.us-west-2.compute.amazonaws.com"
+REDIS_HOST =  "10.0.31.114"
 REDIS_PORT = 6378
 
 s3_client = boto3.client('s3')

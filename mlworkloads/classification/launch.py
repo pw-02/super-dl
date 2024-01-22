@@ -64,7 +64,6 @@ def initialize_parser(config_file: str) -> ArgumentParser:
     parser.add_argument('--super_dl.cache_port', type=int, default=6379)
 
     parser.add_argument('--super_dl.prefetch_lookahead', type=int, default=32)
-    parser.add_argument('--super_dl.s3_lambda_name', type=str,  default=False)
     parser.add_argument('--super_dl.source_system', default="local", choices=['local','s3'])
 
     parser.add_argument("--config", action=ActionConfigFile)  

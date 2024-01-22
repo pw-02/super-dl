@@ -109,6 +109,7 @@ def process_data(fabric: Fabric, dataloader: DataLoader,
             top5=to_python_float(prec5),
             batch_id=batch_id,
             is_training=is_training,
+            cache_hit = cache_hit
             )
     
         if super_client is not None:

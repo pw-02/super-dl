@@ -29,10 +29,10 @@ Resources:
       Role: arn:aws:iam::590178426343:role/SIONLambdaRole
       VpcConfig:  # Add VPC configuration here
         SecurityGroupIds:
-          - sg-073a8cf8942e40e8d  # Replace with your security group ID
+          - sg-01e32e335c30cea50  # Replace with your security group ID
         SubnetIds:
-          - subnet-0fc2cdffeb3e80563  # Replace with your subnet ID
-          - subnet-0d854e1bf5bb55a7a  # Replace with your subnet ID
+          - subnet-034013d4223c8fd5b  # Replace with your subnet ID
+          - subnet-0a7a885bb0a98f999  # Replace with your subnet ID
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: ./batch_creation
