@@ -12,13 +12,13 @@ def event(batch_id = 1,base_path=('train/Airplane/attack_aircraft_s_001210.png',
         'bucket_name': bucket_name,
         'batch_id': batch_id,
         'batch_metadata': [base_path] * batch_size,
-        'transformations': {
-            'transform_params': [
-               {'type': 'Resize', 'args': {'size': (224, 224)}},
-                {'type': 'ToTensor', 'args': {}},
-                # Add more transformations as needed
-            ]
-        }
+        # 'transformations': {
+        #     'transform_params': [
+        #        {'type': 'Resize', 'args': {'size': (224, 224)}},
+        #         {'type': 'ToTensor', 'args': {}},
+        #         # Add more transformations as needed
+        #     ]
+        # }
     }
 
 
@@ -90,5 +90,9 @@ def test_end_to_end_inc_cache():
 
 
 if __name__ == '__main__':
+ 
+ new_event = event()
+
+
  #test_end_to_end_inc_cache()
  test_create_batch_local_api()

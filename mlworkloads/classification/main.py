@@ -1,7 +1,5 @@
 import time
-from pathlib import Path
-from typing import Any, Optional, Tuple, Union, Iterator
-import hashlib
+from typing import Iterator
 import redis
 from torch import nn, optim
 from torchvision import models, transforms
@@ -128,9 +126,6 @@ def initialize_optimizer(optimizer_type:str, model_parameters:Iterator[nn.Parame
                               weight_decay=weight_decay)
     return optimizer
 
-def initialize_cache_client(use_cache: bool, cache_host: str, cache_port: int):
-    return redis.StrictRedis(host=cache_host, port=cache_port) if use_cache else None
-
 
 def initialize_dataloader(hparams:Namespace, transformations, is_training = False, cache_client = None, super_client = None):
     
@@ -140,7 +135,9 @@ def initialize_dataloader(hparams:Namespace, transformations, is_training = Fals
         data_dir=hparams.data.train_data_dir if is_training else hparams.data.eval_data_dir,
         source_system=hparams.super_dl.source_system,
         s3_bucket_name=hparams.data.s3_bucket_name,
-        cache_client=cache_client)
+        cache_client=cache_client,
+        super_client=super_client
+        )
     
     sampler = initialize_sampler(
         dataset, 
@@ -158,10 +155,10 @@ def register_job_with_super(super_client: SuperClient, job_id, train_dataset:SUP
     #dataset_id = hashlib.sha256(f"{data_source_system}_{data_dir}".encode()).hexdigest()
     job_dataset_ids = []
     if train_dataset is not None:
-        super_client.register_dataset(train_dataset.dataset_id, train_dataset.data_dir, train_dataset.source_system)
+        super_client.register_dataset(train_dataset.dataset_id, train_dataset.data_dir, train_dataset.source_system, None)
         job_dataset_ids.append(train_dataset.dataset_id)
     if evaluation_dataset is not None:
-        super_client.register_dataset(evaluation_dataset.dataset_id, evaluation_dataset.data_dir, evaluation_dataset.source_system)
+        super_client.register_dataset(evaluation_dataset.dataset_id, evaluation_dataset.data_dir, evaluation_dataset.source_system, None)
         job_dataset_ids.append(evaluation_dataset.dataset_id)
 
     super_client.register_new_job(job_id=job_id,job_dataset_ids=job_dataset_ids)
@@ -190,6 +187,8 @@ def initialize_dataset(
                         source_system:str,
                         s3_bucket_name:str,
                         cache_client=None,
+                        super_client=None,
+
                         ):
     
 
@@ -199,7 +198,8 @@ def initialize_dataset(
                 transform=transformations,
                 cache_client=cache_client,
                 source_system=source_system,
-                s3_bucket_name=s3_bucket_name
+                s3_bucket_name=s3_bucket_name,
+                super_client=super_client
                 )
     
 

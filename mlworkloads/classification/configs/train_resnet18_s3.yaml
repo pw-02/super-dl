@@ -40,8 +40,8 @@ data:
 super_dl:
     use_cache: True
     server_address: localhost:50051
-    cache_host: localhost
-    cache_port: 6379
+    cache_host: ec2-34-210-71-230.us-west-2.compute.amazonaws.com  #localhost
+    cache_port: 6378 #6379
     prefetch_lookahead: 10
     s3_lambda_name: lambda_fn
     source_system: s3

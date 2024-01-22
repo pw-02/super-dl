@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import boto3
 import zlib
+import time
+from superdl.syncgrpc.client import SuperClient
 
 
 # Define constants
@@ -22,7 +24,8 @@ class SUPERDataset(Dataset):
                  transform: Optional[Callable],
                  cache_client,
                  source_system,
-                 s3_bucket_name = None):
+                 s3_bucket_name = None,
+                 super_client = None):
         
         self.dataset_id =  f"{source_system}_{data_dir}"
         self.cache_client = cache_client
@@ -31,6 +34,7 @@ class SUPERDataset(Dataset):
         self.source_system = source_system
         self.img_extensions = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
         self.s3_bucket_name = s3_bucket_name
+        self.super_client:SuperClient = super_client
         self.use_s3 = True if source_system == 's3' else False
         if self.use_s3:
             self.samples: Dict[str, List[str]] =  self._classify_samples_s3(S3Url(data_dir))
@@ -51,15 +55,28 @@ class SUPERDataset(Dataset):
 
     def __getitem__(self, next_batch):
         batch_indices, batch_id = next_batch
-
+        cached_data = None
+        end = time.time()
         if self.cache_client is not None:
-            cached_data = self.cache_client.get(batch_id)
-        else:
-            cached_data = None
+            try:
+                cached_data = self.fetch_from_cache(batch_id)
+            except:
+                cached_data = None
+                print(f'cache miss: {batch_id}')
+                
+                with self.super_client.get_batch_status(batch_id, self.dataset_id) as batch_status:
+                    attempts = 0
+                    while batch_status and cached_data is None and attempts < 100:
+                        cached_data = self.fetch_from_cache(batch_id)
+                        attempts += 1
 
         if cached_data:
+            print(f"data fetch from cache {time.time() - end}")
             # Convert JSON batch to torch format
+            decode_end = time.time()
             torch_imgs, torch_labels = self.deserialize_torch_batch(cached_data)
+            print(f"data decode from cache {time.time() - decode_end}")
+
             return torch_imgs, torch_labels, batch_id, True
         
         if self.use_s3:
@@ -67,10 +84,16 @@ class SUPERDataset(Dataset):
             images, labels = self.fetch_batch_data_s3(batch_indices, batch_id)
         else:
             images, labels = self.fetch_batch_data_local(batch_indices, batch_id)
+            print(f"data fetch {time.time() - end}")
 
 
         return torch.stack(images), torch.tensor(labels), batch_id, False
     
+
+    def fetch_from_cache(self, batch_id):
+       return self.cache_client.get(batch_id)
+
+
     def is_image_file(self, filename:str):
         return any(filename.endswith(extension) for extension in self.img_extensions)
 

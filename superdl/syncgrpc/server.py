@@ -10,13 +10,23 @@ class CacheCoordinatorService(cache_coordinator_pb2_grpc.CacheCoordinatorService
     def __init__(self, coordinator: Coordinator):
         self.coordinator = coordinator
 
+    
+    def GetBatchStatus(self, request, context):
+        cached_or_inprogress, message = self.coordinator.get_batch_status(request.batch_id,request.dataset_id)
+        logger.info(f"{message}")
+        return cache_coordinator_pb2.GetBatchStatusResponse(batch_cached_or_in_progress=cached_or_inprogress, message = message)
+
+
     def RegisterJob(self, request, context):
         job_added, message = self.coordinator.add_new_job(request.job_id,request.dataset_ids)
         logger.info(f"{message}")
         return cache_coordinator_pb2.RegisterJobResponse(job_registered=job_added, message = message)
     
     def RegisterDataset(self, request, context):
-        dataset_added, message = self.coordinator.add_new_dataset(request.dataset_id,request.source_system, data_dir=request.data_dir, labelled_samples=request.labelled_samples)
+        dataset_added, message = self.coordinator.add_new_dataset(request.dataset_id,
+                                                                  request.source_system,
+                                                                    data_dir=request.data_dir, 
+                                                                    labelled_samples= None if request.labelled_samples == 'null' else request.labelled_samples)
         logger.info(f"{message}")
         return cache_coordinator_pb2.RegisterDatasetResponse(dataset_registered=dataset_added, message = message)
     

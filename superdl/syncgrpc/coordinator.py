@@ -13,6 +13,7 @@ import json
 from concurrent import futures
 from superdl.logger_config import logger
 
+DEV_MODE = True
 
 def format_timestamp(current_timestamp, use_utc=True):
     if use_utc:
@@ -26,9 +27,9 @@ def format_timestamp(current_timestamp, use_utc=True):
 
 
 class Coordinator:
-    def __init__(self, lambda_function_name=None, aws_region=None, testing_locally=True, s3_bucket_name='sdl-cifar10'):
-        self.job_cache: Dict[int, Job] = {}  # Dictionary to store job information
-        self.datasets: Dict[int, Dataset] = {}
+    def __init__(self, lambda_function_name='superlambda-CreateBatchFunction-FHh7VhqBhB0v', aws_region=None, testing_locally=False, s3_bucket_name='sdl-cifar10'):
+        self.registered_jobs: Dict[int, Job] = {}  # Dictionary to store job information
+        self.registered_datasets: Dict[int, Dataset] = {}
 
         self.batch_pqueue = PriorityQueue()  # Priority queue for batch processing using heapq
         self.s3_bucket_name = s3_bucket_name
@@ -47,16 +48,26 @@ class Coordinator:
         
         # Initialize thread pool executors
         self.pre_process_executor = futures.ThreadPoolExecutor(max_workers=1)
-        self.processing_executor =  futures.ThreadPoolExecutor(max_workers=1) #this must always be at least 2
+        self.processing_executor =  futures.ThreadPoolExecutor(max_workers=5) #this must always be at least 2
         self.post_processing_executor =  futures.ThreadPoolExecutor(max_workers=1)
         self.dequeuing_stop_event = threading.Event()
         self.lock = threading.Lock()  # Added lock for thread safety
-
+    
+    def get_batch_status(self, batch_id, dataset_id):
+        batch = self.registered_datasets[dataset_id].batches[batch_id]
+        
+        if batch.is_cached or batch.caching_in_progress:
+            message = f"Batch'{batch_id}' is cached or in actively being cached"
+            return True,  message
+        else:
+            message = f"Batch'{batch_id}' is not cached or actively being cached"
+            return False,  message
+            
 
     def add_new_job(self,job_id, dataset_ids):
         try:  
-            if job_id not in self.job_cache:
-                self.job_cache[job_id] = Job(job_id, list(dataset_ids))
+            if job_id not in self.registered_jobs:
+                self.registered_jobs[job_id] = Job(job_id, list(dataset_ids))
                 return True, f"New Job Registered. Job Id:'{job_id}', Datasets: {list(dataset_ids)}"
 
             else:
@@ -69,13 +80,13 @@ class Coordinator:
     
     def add_new_dataset(self, dataset_id, source_system, data_dir, labelled_samples):
         try:
-            if dataset_id in self.datasets:
+            if dataset_id in self.registered_datasets:
                 return True, f"Skipped Dataset '{dataset_id}' Registration. Already Registered"
             else:
                 dataset = Dataset(dataset_id, source_system, data_dir, labelled_samples)
                 if len(dataset) > 1:
                     with self.lock:  # Use lock to ensure thread safety
-                        self.datasets[dataset_id] = dataset
+                        self.registered_datasets[dataset_id] = dataset
                     return True, f"New Dataset Registered. Dataset Id: '{dataset_id}'"
                 else:
                     message = f"No data found for dataset '{data_dir}' in '{source_system}'"
@@ -92,15 +103,15 @@ class Coordinator:
             def prepocess_batch_async(job_id, batch_id, batch_sample_indices, dataset_id):
 
                 # Increment the count of batches pending for the job
-                self.job_cache[job_id].increment_batches_pending_count()
+                self.registered_jobs[job_id].increment_batches_pending_count()
 
                 # Predict the time when the batch will be accessed by the job
-                predicted_time = self.job_cache[job_id].predict_batch_access_time()
+                predicted_time = self.registered_jobs[job_id].predict_batch_access_time()
                 
                 # Check if we have seen this batch_id before, if not add it
-                dataset_batches = self.datasets[dataset_id].batches
+                dataset_batches = self.registered_datasets[dataset_id].batches
 
-                if batch_id not in self.datasets[dataset_id].batches:
+                if batch_id not in self.registered_datasets[dataset_id].batches:
                     dataset_batches[batch_id] = Batch(batch_id, batch_sample_indices)
 
                 dataset_batches[batch_id].predicted_access_times[job_id] = predicted_time
@@ -152,7 +163,7 @@ class Coordinator:
 
     def process_batch(self, job_id, batch_id, dataset_id):
         try:
-            batch = self.datasets[dataset_id].batches[batch_id]
+            batch = self.registered_datasets[dataset_id].batches[batch_id]
 
             if not batch.is_cached and not batch.caching_in_progress:
                 action = "Cached Batch"
@@ -163,10 +174,10 @@ class Coordinator:
                 logger.info(f"Processed batch '{batch_id}'. Action Taken: '{action}', Message: 'Batch already cached or actively being cached by another process'")
                 return
 
-            samples = self.datasets[dataset_id].get_samples_for_batch(batch.batch_sample_indices)
+            samples = self.registered_datasets[dataset_id].get_samples_for_batch(batch.batch_sample_indices)
             batch.set_caching_in_progress(True)
 
-            successfully_cached, error_message = self.prefetch_batch(job_id, batch_id, samples, check_cache_first=not (action == "Cached Batch"), dataset_id=dataset_id)
+            successfully_cached, error_message = self.prefetch_batch( batch_id, samples, check_cache_first=not (action == "Cached Batch"))
 
             if successfully_cached:
                 batch.set_cached_status(is_cached=True)
@@ -181,7 +192,7 @@ class Coordinator:
 
     
 
-    def prefetch_batch(self, job_id, batch_id, labelled_samples, check_cache_first, dataset_id):
+    def prefetch_batch(self, batch_id, labelled_samples, check_cache_first):
         try:
 
             event_data = {
@@ -193,12 +204,12 @@ class Coordinator:
             if self.testing_locally:
                 response = requests.post(f"{self.sam_local_url}{self.sam_function_path}", json=event_data)
             else:
-                response = self.lambda_client.invoke(FunctionName=self.lambda_function_name,
-                                                     InvocationType='Event',  # Change this based on your requirements
-                                                     Payload=event_data  # Pass the required payload or input parameters
+                response =  self.lambda_client.invoke(FunctionName=self.lambda_function_name,
+                                                     #InvocationType='Event',  # Change this based on your requirements
+                                                     Payload=json.dumps(event_data)  # Pass the required payload or input parameters
                                                      )
             # Check the response status code
-            if response.status_code == 200:
+            if response['StatusCode'] == 200:
                 return True, f"Sucessfully cached batch: {batch_id}"
             else:
                 return False, f"Error invoking function. Status code: {response.status_code}"
@@ -211,7 +222,7 @@ class Coordinator:
         try:
             # Define a function to be executed asynchronously
             def process_metrics_async(job_id, dataset_id, batch_id, metrics:Dict):
-                job = self.job_cache[job_id]
+                job = self.registered_jobs[job_id]
                 #reduce number of pending batches processed
                 job.decrement_batches_prending_count()
                 #update training speed
@@ -226,7 +237,7 @@ class Coordinator:
                 #get prediction access time
                 batch_access_time = metrics['access_time']
 
-                batch = self.datasets[dataset_id].batches[batch_id]
+                batch = self.registered_datasets[dataset_id].batches[batch_id]
 
                 batch.actual_access_times[job_id] = batch_access_time
 

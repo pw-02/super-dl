@@ -10,6 +10,8 @@ class CacheCoordinatorServiceStub(object):
     """
     Command to create stub files:
     python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+    rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
+    rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
     """
 
     def __init__(self, channel):
@@ -18,6 +20,11 @@ class CacheCoordinatorServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.GetBatchStatus = channel.unary_unary(
+                '/CacheCoordinatorService/GetBatchStatus',
+                request_serializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.GetBatchStatusRequest.SerializeToString,
+                response_deserializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.GetBatchStatusResponse.FromString,
+                )
         self.RegisterDataset = channel.unary_unary(
                 '/CacheCoordinatorService/RegisterDataset',
                 request_serializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterDatasetInfo.SerializeToString,
@@ -44,12 +51,18 @@ class CacheCoordinatorServiceServicer(object):
     """
     Command to create stub files:
     python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+    rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
+    rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
     """
 
+    def GetBatchStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def RegisterDataset(self, request, context):
-        """rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
-        rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -75,6 +88,11 @@ class CacheCoordinatorServiceServicer(object):
 
 def add_CacheCoordinatorServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'GetBatchStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBatchStatus,
+                    request_deserializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.GetBatchStatusRequest.FromString,
+                    response_serializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.GetBatchStatusResponse.SerializeToString,
+            ),
             'RegisterDataset': grpc.unary_unary_rpc_method_handler(
                     servicer.RegisterDataset,
                     request_deserializer=superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.RegisterDatasetInfo.FromString,
@@ -106,7 +124,26 @@ class CacheCoordinatorService(object):
     """
     Command to create stub files:
     python -m grpc_tools.protoc --proto_path=. ./superdl/syncgrpc/protos/cache_coordinator.proto --python_out=. --grpc_python_out=.
+    rpc RegisterJob(JobInfo) returns (RegisterJobResponse);
+    rpc SendMetrics(MetricsRequest) returns (google.protobuf.Empty);
     """
+
+    @staticmethod
+    def GetBatchStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/CacheCoordinatorService/GetBatchStatus',
+            superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.GetBatchStatusRequest.SerializeToString,
+            superdl_dot_syncgrpc_dot_protos_dot_cache__coordinator__pb2.GetBatchStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
     def RegisterDataset(request,

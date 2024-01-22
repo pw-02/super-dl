@@ -25,6 +25,12 @@ class SuperClient:
         else:
             pass
             #  logger.info(f"Failed to Register Job with Id: '{job_id}'. Server Message: '{response.message}'.")
+    
+    def get_batch_status(self, batch_id, dataset_id):
+        info = cache_coordinator_pb2.GetBatchStatusRequest(batch_id=batch_id, dataset_id=dataset_id)
+        response = self.stub.GetBatchStatus(info)
+        return  response.batch_cached_or_in_progress
+      
 
     def register_dataset(self, dataset_id, data_dir, source_system, labelled_samples):
         dataset_info = cache_coordinator_pb2.RegisterDatasetInfo(

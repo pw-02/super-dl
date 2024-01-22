@@ -35,7 +35,7 @@ class Dataset():
         self.source_system = source_system
         self.data_dir = data_dir
 
-        if labelled_samples:
+        if labelled_samples is not None:
              self.samples = json.loads(labelled_samples)
         else:     
             if source_system =='local':

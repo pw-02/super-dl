@@ -119,7 +119,8 @@ class SUPERSampler(SuperBatchSampler):
         self.super_client = super_client
         self.prefetch_lookahead = prefetch_lookahead
         self.job_id = job_id
-        self.dataset_id = dataset.dataset_id 
+        self.dataset_id = dataset.dataset_id
+        
         
     def share_future_batch_accesses(self, batches: List[List[int]]) -> None:
         """
@@ -127,7 +128,8 @@ class SUPERSampler(SuperBatchSampler):
         """
         
         if batches and self.super_client is not None:
-            self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, dataset_id = self.dataset_id)
+            pass
+            #self.super_client.share_batch_access_pattern(job_id=self.job_id, batches=batches, dataset_id = self.dataset_id)
 
 
     def __iter__(self) -> Iterator[List[int]]:

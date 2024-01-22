@@ -14,27 +14,6 @@ Globals:
       - image/jpg
       - image/jpeg
 Resources:
-  CreateBatchFunctionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: CreateBatchFunctionRole
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: S3ReadAccessPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                Resource: "arn:aws:s3:::*"  # Allow access to all S3 buckets
-
   CreateBatchFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -47,7 +26,13 @@ Resources:
           Properties:
             Path: /create_batch
             Method: post
-      Role: !GetAtt CreateBatchFunctionRole.Arn
+      Role: arn:aws:iam::590178426343:role/SIONLambdaRole
+      VpcConfig:  # Add VPC configuration here
+        SecurityGroupIds:
+          - sg-073a8cf8942e40e8d  # Replace with your security group ID
+        SubnetIds:
+          - subnet-0fc2cdffeb3e80563  # Replace with your subnet ID
+          - subnet-0d854e1bf5bb55a7a  # Replace with your subnet ID
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: ./batch_creation
@@ -57,9 +42,9 @@ Outputs:
   CreateBatchApi:
     Description: "API Gateway endpoint URL for Prod stage for CreateBatch function"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/create_batch/"
-  CreateBatchFunction:
-    Description: "CreateBatch Lambda Function ARN"
-    Value: !GetAtt CreateBatchFunction.Arn
-  CreateBatchFunctionIamRole:
-    Description: "IAM Role created for CreateBatch function"
-    Value: !GetAtt CreateBatchFunctionRole.Arn
+  # CreateBatchFunction:
+  #   Description: "CreateBatch Lambda Function ARN"
+  #   Value: !GetAtt CreateBatchFunction.Arn
+  # CreateBatchFunctionIamRole:
+  #   Description: "IAM Role created for CreateBatch function"
+  #   Value: !GetAtt CreateBatchFunctionRole.Arn

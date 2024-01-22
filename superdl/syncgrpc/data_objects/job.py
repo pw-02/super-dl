@@ -11,6 +11,16 @@ class Job:
         self.cache_hits  = 0
         self.cache_misses  = 0
         self.job_active = True
+        self.pending_batches = {}
+    
+
+    
+
+
+
+
+
+
 
     def increment_cache_hit_count(self) :
         with self.lock:
@@ -33,3 +43,5 @@ class Job:
             current_time = time.time()
             predicted_time = current_time + (self.batches_pending_count * (1 / self.training_speed))
             return predicted_time
+        
+    

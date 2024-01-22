@@ -11,9 +11,11 @@ import json
 import os
 # Externalize configuration parameters
 #REDIS_HOST = '172.17.0.2'
-REDIS_HOST = 'host.docker.internal' #use this when testing locally on .dev container
+#REDIS_HOST = 'host.docker.internal' #use this when testing locally on .dev container
+#REDIS_PORT = 6379
 
-REDIS_PORT = 6379
+REDIS_HOST =  "ec2-34-210-71-230.us-west-2.compute.amazonaws.com"
+REDIS_PORT = 6378
 
 s3_client = boto3.client('s3')
 redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT) # Instantiate Redis client
@@ -22,7 +24,6 @@ use_local = False
 
 def download_file(bucket_name, file_path):
 # Print current working directory
-    print("Current Working Directory:", os.getcwd())
     if use_local:
         os.chdir('/workspaces/super-dl/')
         file_path = os.path.join(os.getcwd(), file_path)
@@ -82,8 +83,8 @@ def deserialize_torchvision_transformation(serialized_transform):
 def lambda_handler(event, context):
     try:
         #Extract information from the event
-        body = event['body']
-        event = json.loads(body)
+        # body = event['body']
+        # event = json.loads(body)
 
         bucket_name = event['bucket_name']
         batch_metadata = event['batch_metadata']
